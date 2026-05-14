@@ -20,6 +20,7 @@
  ****************************************************************************/
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using Log = KSPCommunityLib.Logging.Log;
 
 namespace JSI
@@ -78,6 +79,20 @@ namespace JSI
             if (JSIFAR.farFound) RegisterModule(typeof(JSIFAR));
             if (JSIKAC.kacFound) RegisterModule(typeof(JSIKAC));
             if (JSIPilotAssistant.paFound) RegisterModule(typeof(JSIPilotAssistant));
+
+            // Make sure static constructors for all modules are called so they can register
+            foreach (var jsiModuleType in AssemblyLoader.GetSubclassesOfParentClass(typeof(IJSIModule)))
+            {
+                try
+                {
+                    RuntimeHelpers.RunClassConstructor(jsiModuleType.TypeHandle);
+                }
+                catch(Exception e)
+                {
+                    Log.Error("Error running static constructor for JSI module type " + jsiModuleType.Name + ": ");
+                    Log.Exception(e);
+                }
+            }
         }
 
         #endregion
