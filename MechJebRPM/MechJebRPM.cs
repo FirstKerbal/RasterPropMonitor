@@ -542,7 +542,7 @@ namespace JSI
 
             AddToggleItem(menu, "ENGAGE Ascent Autopilot",
                 () => mjCore.AscentSettings?.AscentAutopilot?.Enabled == true,
-                (val) => MechJebProxy.SetAscentAutopilotEngaged(mjCore, val, this));
+                (val) => MechJebProxy.SetAscentAutopilotEngaged(mjCore, val));
 
             AddMenuItem(menu, "------", null);
 

@@ -204,31 +204,31 @@ namespace JSI
 
         #region Autopilot Engagement
 
-        public static void SetAscentAutopilotEngaged(MechJebCore core, bool engaged, object controller = null)
+        public static void SetAscentAutopilotEngaged(MechJebCore core, bool engaged)
         {
             var autopilot = core?.AscentSettings?.AscentAutopilot;
             if (autopilot == null) return;
 
-            if (controller == null) controller = core;
+            // the stock MJ code uses the ascent menu as the user, so let's do the same to keep in sync
+            var user = (object)core.GetComputerModule<MechJebModuleAscentMenu>() ?? core;
 
             if (engaged)
-                autopilot.Users.Add(controller);
+                autopilot.Users.Add(user);
             else
-                autopilot.Users.Remove(controller);
+                autopilot.Users.Remove(user);
         }
 
-        public static void SetRendezvousAutopilotEngaged(MechJebCore core, bool engaged, object controller = null)
+        public static void SetRendezvousAutopilotEngaged(MechJebCore core, bool engaged)
         {
             var rendezvous = core?.GetComputerModule<MechJebModuleRendezvousAutopilot>();
             if (rendezvous == null) return;
 
-            if (controller == null) controller = core.GetComputerModule<MechJebModuleRendezvousAutopilotWindow>();
-            if (controller == null) return;
+            var user = (object)core.GetComputerModule<MechJebModuleRendezvousAutopilotWindow>() ?? core;
 
             if (engaged)
-                rendezvous.Users.Add(controller);
+                rendezvous.Users.Add(user);
             else
-                rendezvous.Users.Remove(controller);
+                rendezvous.Users.Remove(user);
         }
 
         #endregion
