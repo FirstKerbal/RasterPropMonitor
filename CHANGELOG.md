@@ -4,10 +4,11 @@ Discord support server: https://discord.gg/vBDzZAq3AF.
 
 Please always post your [KSP.log file](https://gist.github.com/JonnyOThan/04c2074b56f78e56d115621effee30f9) when reporting issues.
 
-## Unreleased
+## 1.1.0.1 - 2026-05-15
 
 - Fixed MechJeb button/switch integration
 - Added airplane autopilot support to MFDs (thanks @Madlykeanu)
+
 
 ## 1.1.0.0 - 2026-04-13
 
