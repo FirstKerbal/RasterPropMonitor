@@ -19,6 +19,7 @@
  * along with RasterPropMonitor.  If not, see <http://www.gnu.org/licenses/>.
  ****************************************************************************/
 
+using Expansions.Missions.Editor;
 using KSPCommunityLib.Logging;
 using MuMech;
 using System;
@@ -76,7 +77,7 @@ namespace JSI
         private MechJebModuleWarpController mjWarpController = null;
         private MechJebModuleStageStats mjStageStats = null;
         private MechJebModuleAirplaneGuidance mjAirplaneGuidance = null;
-		private Vessel activeVessel = null;
+        private Vessel activeVessel = null;
 
         private TextMenu smartassOrbitalMenu;
         private TextMenu smartassSurfaceMenu;
@@ -106,36 +107,6 @@ namespace JSI
         
         #endregion
 
-        #region Tracked Item Classes
-        private class TrackedTextMenu : TextMenu
-        {
-            public readonly List<TrackedMenuItem> trackedItems = new List<TrackedMenuItem>();
-        }
-
-        private static List<TrackedMenuItem> GetTrackedItems(TextMenu menu)
-        {
-            return (menu as TrackedTextMenu)?.trackedItems;
-        }
-
-        private class TrackedMenuItem
-        {
-            public TextMenu.Item item;
-            public string id;
-            public Func<bool> isEnabled;
-            public Func<bool> isSelected;
-            public Func<string> getLabel;
-            public Func<string> getValue;
-            public bool isValueItem;
-            public Func<double> getNumber;
-            public Action<double> setNumber;
-            public double step;
-            public bool hasMin;
-            public double min;
-            public bool hasMax;
-            public double max;
-        }
-        #endregion
-
         #region Initialization
         public void Start()
         {
@@ -146,354 +117,155 @@ namespace JSI
 
         private void BuildMenus()
         {
-            topMenu = new TrackedTextMenu();
+            topMenu = new TextMenu();
             topMenu.labelColor = JUtil.ColorToColorTag(Color.white);
             topMenu.selectedColor = JUtil.ColorToColorTag(Color.green);
             topMenu.disabledColor = JUtil.ColorToColorTag(Color.gray);
 
             // Add all main menu entries
-            AddMenuItem(topMenu, "Attitude Control (SmartASS)", () => PushMenu(BuildSmartASSMenu()));
-            AddMenuItem(topMenu, "Ascent Guidance", () => PushMenu(BuildAscentMenu()), IsAscentAvailable);
-            AddMenuItem(topMenu, "Landing Guidance", () => PushMenu(BuildLandingMenu()),
+            topMenu.AddMenuItem("Attitude Control (SmartASS)", () => PushMenu(BuildSmartASSMenu()));
+            topMenu.AddMenuItem("Ascent Guidance", () => PushMenu(BuildAscentMenu()), IsAscentAvailable);
+            topMenu.AddMenuItem("Landing Guidance", () => PushMenu(BuildLandingMenu()),
                 () => vessel != null && !vessel.LandedOrSplashed);
-            AddMenuItem(topMenu, "Maneuver Planner", () => PushMenu(BuildManeuverPlannerMenu()));
-            AddMenuItem(topMenu, "Node Editor", () => PushMenu(BuildNodeEditorMenu()),
+            topMenu.AddMenuItem("Maneuver Planner", () => PushMenu(BuildManeuverPlannerMenu()));
+            topMenu.AddMenuItem("Node Editor", () => PushMenu(BuildNodeEditorMenu()),
                 () => vessel != null && vessel.patchedConicSolver != null && 
                         vessel.patchedConicSolver.maneuverNodes.Count > 0);
-            AddMenuItem(topMenu, "Execute Node", () => ExecuteNode(),
+            topMenu.AddMenuItem("Execute Node", () => ExecuteNode(),
                 () => vessel != null && vessel.patchedConicSolver != null && 
                         vessel.patchedConicSolver.maneuverNodes.Count > 0);
-            AddMenuItem(topMenu, "Rendezvous", () => PushMenu(BuildRendezvousMenu()),
+            topMenu.AddMenuItem("Rendezvous", () => PushMenu(BuildRendezvousMenu()),
                 () => FlightGlobals.fetch.VesselTarget != null);
-            AddMenuItem(topMenu, "Docking Guidance", () => PushMenu(BuildDockingMenu()),
+            topMenu.AddMenuItem("Docking Guidance", () => PushMenu(BuildDockingMenu()),
                 () => FlightGlobals.fetch.VesselTarget != null);
-            AddMenuItem(topMenu, "Translatron", () => PushMenu(BuildTranslatronMenu()));
-            AddMenuItem(topMenu, "Rover Autopilot", () => PushMenu(BuildRoverMenu()),
+            topMenu.AddMenuItem("Translatron", () => PushMenu(BuildTranslatronMenu()));
+            topMenu.AddMenuItem("Rover Autopilot", () => PushMenu(BuildRoverMenu()),
                 () => vessel != null && vessel.Landed);
-            AddMenuItem(topMenu, "Aircraft Autopilot", () => PushMenu(BuildAircraftMenu()),
+            topMenu.AddMenuItem("Aircraft Autopilot", () => PushMenu(BuildAircraftMenu()),
                 () => vessel != null && vessel.atmDensity > 0);
-            AddMenuItem(topMenu, "Spaceplane Guidance", () => PushMenu(BuildSpaceplaneMenu()),
+            topMenu.AddMenuItem("Spaceplane Guidance", () => PushMenu(BuildSpaceplaneMenu()),
                 () => vessel != null && vessel.atmDensity > 0);
-            AddMenuItem(topMenu, "Utilities", () => PushMenu(BuildUtilitiesMenu()));
-            AddMenuItem(topMenu, "Info Display", () => PushMenu(BuildInfoMenu()));
-            AddMenuItem(topMenu, "Settings", () => PushMenu(BuildSettingsMenu()));
+            topMenu.AddMenuItem("Utilities", () => PushMenu(BuildUtilitiesMenu()));
+            topMenu.AddMenuItem("Info Display", () => PushMenu(BuildInfoMenu()));
+            topMenu.AddMenuItem("Settings", () => PushMenu(BuildSettingsMenu()));
 
             currentMenu = topMenu;
         }
 
-        private void AddMenuItem(TextMenu menu, string label, Action action, 
-            Func<bool> enabledCheck = null)
+        #endregion
+
+        #region SmartASS Menu
+        private TextMenu BuildSmartASSMenu()
         {
-            Action<int, TextMenu.Item> menuAction = null;
-            if (action != null)
-            {
-                menuAction = (idx, menuItem) => action();
-            }
-            
-            var newItem = new TextMenu.Item(label, menuAction);
-            menu.Add(newItem);
-            
-            if (enabledCheck != null)
-            {
-                GetTrackedItems(menu).Add(new TrackedMenuItem
-                {
-                    item = newItem,
-                    id = label,
-                    isEnabled = enabledCheck
-                });
-            }
-        }
-
-        // Overload for dynamic labels that update on refresh
-        private void AddMenuItem(TextMenu menu, Func<string> labelFunc, Action action, 
-            Func<bool> enabledCheck = null)
-        {
-            string initialLabel = labelFunc();
-            Action<int, TextMenu.Item> menuAction = null;
-            if (action != null)
-            {
-                menuAction = (idx, menuItem) => action();
-            }
-            
-            var newItem = new TextMenu.Item(initialLabel, menuAction);
-            menu.Add(newItem);
-            
-            GetTrackedItems(menu).Add(new TrackedMenuItem
-            {
-                item = newItem,
-                id = "DynamicLabel_" + initialLabel,
-                isEnabled = enabledCheck,
-                getLabel = labelFunc
-            });
-        }
-
-        private void AddToggleItem(TextMenu menu, string label, 
-            Func<bool> getValue, Action<bool> setValue,
-            Func<bool> enabledCheck = null)
-        {
-            Action<int, TextMenu.Item> toggleAction = (idx, menuItem) =>
-            {
-                if (mjCore == null) return;
-                bool current = getValue();
-                setValue(!current);
-                UpdateTrackedItems();
-            };
-
-            // Use color highlighting for toggles - green when enabled, normal when disabled
-            // No checkbox prefix needed since RPM interprets [text] as color tags
-            var newItem = new TextMenu.Item(label, toggleAction);
-            menu.Add(newItem);
-
-            GetTrackedItems(menu).Add(new TrackedMenuItem
-            {
-                item = newItem,
-                id = label,
-                isEnabled = enabledCheck,
-                isSelected = getValue  // This makes the item green when checked
-            });
-        }
-
-		private void AddToggleItem(TextMenu menu, string label,
-            object obj, FieldInfo field,
-            Func<bool> enabledCheck = null)
-        {
-            AddToggleItem(menu, label,
-				() => (bool)field.GetValue(obj),
-				val => field.SetValue(obj, val),
-				enabledCheck);
-		}
-
-		private void AddValueItem(TextMenu menu, string label,
-            Func<string> getValue, Action<double> setValue,
-            Func<bool> enabledCheck = null)
-        {
-            Action<int, TextMenu.Item> editAction = (idx, menuItem) =>
-            {
-                // Start editing mode
-                // For now, cycle through preset values or implement number input
-            };
-
-            var newItem = new TextMenu.Item(label, editAction);
-            menu.Add(newItem);
-
-            GetTrackedItems(menu).Add(new TrackedMenuItem
-            {
-                item = newItem,
-                id = label,
-                isEnabled = enabledCheck,
-                getValue = getValue,
-                getLabel = () => label + ": " + getValue()
-            });
-        }
-
-        private void AddNumericItem(TextMenu menu, string label,
-            Func<double> getValue, Action<double> setValue,
-            double step, Func<double, string> format,
-            Func<bool> enabledCheck = null,
-            bool hasMin = false, double min = 0,
-            bool hasMax = false, double max = 0)
-        {
-            Action<int, TextMenu.Item> editAction = (idx, menuItem) =>
-            {
-                // Enter key toggles edit mode; actual changes use left/right
-            };
-
-            var newItem = new TextMenu.Item(label, editAction);
-            menu.Add(newItem);
-
-            GetTrackedItems(menu).Add(new TrackedMenuItem
-            {
-                item = newItem,
-                id = label,
-                isEnabled = enabledCheck,
-                isValueItem = true,
-                getNumber = getValue,
-                setNumber = setValue,
-                step = step,
-                hasMin = hasMin,
-                min = min,
-                hasMax = hasMax,
-                max = max,
-                getLabel = () => label + ": " + format(getValue())
-            });
-        }
-
-		private void AddNumericItem(TextMenu menu, string label,
-			EditableDouble editableDouble,
-			double step, Func<double, string> format,
-			Func<bool> enabledCheck = null,
-			bool hasMin = false, double min = 0,
-			bool hasMax = false, double max = 0)
-		{
-            if (editableDouble == null)
-            {
-                Log.Error($"editableDouble is null trying to add numeric item {label}");
-                return;
-            }
-            AddNumericItem(menu, label, () => editableDouble.Val, val => editableDouble.Val = val, step, format, enabledCheck, hasMin, min, hasMax, max);
-		}
-
-		private void AddNumericItem(TextMenu menu, string label,
-			EditableDoubleMult editableDoubleMult,
-			double step, Func<double, string> format,
-			Func<bool> enabledCheck = null,
-			bool hasMin = false, double min = 0,
-			bool hasMax = false, double max = 0)
-		{
-            if (editableDoubleMult == null)
-            {
-                Log.Error($"editableDoubleMult is null trying to add numeric item {label}");
-                return;
-            }
-			AddNumericItem(menu, label, () => editableDoubleMult.Val, val => editableDoubleMult.Val = val, step, format, enabledCheck, hasMin, min, hasMax, max);
-		}
-
-		private void AddNumericItem(TextMenu menu, string label,
-			EditableInt editableInt,
-			double step, Func<double, string> format,
-			Func<bool> enabledCheck = null,
-			bool hasMin = false, double min = 0,
-			bool hasMax = false, double max = 0)
-		{
-			if (editableInt == null)
-			{
-				Log.Error($"editableInt is null trying to add numeric item {label}");
-				return;
-			}
-			AddNumericItem(menu, label, () => editableInt.Val, val => editableInt.Val = (int)val, step, format, enabledCheck, hasMin, min, hasMax, max);
-		}
-
-		#endregion
-
-		#region SmartASS Menu
-		private TextMenu BuildSmartASSMenu()
-        {
-            var menu = new TrackedTextMenu();
+            var menu = new TextMenu();
             menu.labelColor = JUtil.ColorToColorTag(Color.white);
             menu.selectedColor = JUtil.ColorToColorTag(Color.green);
             menu.disabledColor = JUtil.ColorToColorTag(Color.gray);
 
-            AddMenuItem(menu, "[MODE: ORBITAL]", () => PushMenu(BuildSmartASSOrbitalMenu()));
-            AddMenuItem(menu, "[MODE: SURFACE]", () => PushMenu(BuildSmartASSSurfaceMenu()));
-            AddMenuItem(menu, "[MODE: TARGET]", () => PushMenu(BuildSmartASSTargetMenu()),
+            menu.AddMenuItem("[MODE: ORBITAL]", () => PushMenu(BuildSmartASSOrbitalMenu()));
+            menu.AddMenuItem("[MODE: SURFACE]", () => PushMenu(BuildSmartASSSurfaceMenu()));
+            menu.AddMenuItem("[MODE: TARGET]", () => PushMenu(BuildSmartASSTargetMenu()),
                 () => FlightGlobals.fetch.VesselTarget != null);
-            AddMenuItem(menu, "[MODE: ADVANCED]", () => PushMenu(BuildSmartASSAdvancedMenu()));
-            AddMenuItem(menu, "[MODE: AUTO]", () => SetSmartASSAuto());
-            AddMenuItem(menu, "------", null);
-            AddMenuItem(menu, "OFF", () => SetSmartASSTarget(MechJebModuleSmartASS.Target.OFF));
-            AddMenuItem(menu, "KILL ROTATION", () => SetSmartASSTarget(MechJebModuleSmartASS.Target.KILLROT));
-            AddMenuItem(menu, "[BACK]", () => PopMenu());
+            menu.AddMenuItem("[MODE: ADVANCED]", () => PushMenu(BuildSmartASSAdvancedMenu()));
+            menu.AddMenuItem("[MODE: AUTO]", () => SetSmartASSAuto());
+            menu.AddMenuItem("------", null);
+            menu.AddMenuItem("OFF", () => SetSmartASSTarget(MechJebModuleSmartASS.Target.OFF));
+            menu.AddMenuItem("KILL ROTATION", () => SetSmartASSTarget(MechJebModuleSmartASS.Target.KILLROT));
+            menu.AddMenuItem("[BACK]", () => PopMenu());
 
             return menu;
         }
 
         private TextMenu BuildSmartASSOrbitalMenu()
         {
-            var menu = new TrackedTextMenu();
+            var menu = new TextMenu();
             menu.labelColor = JUtil.ColorToColorTag(Color.white);
             menu.selectedColor = JUtil.ColorToColorTag(Color.green);
             menu.disabledColor = JUtil.ColorToColorTag(Color.gray);
 
             smartassOrbitalMenu = menu;
 
-            menu.Add(new TextMenu.Item("PROGRADE", (idx, item) => SetSmartASSTarget(MechJebModuleSmartASS.Target.PROGRADE), (int)MechJebModuleSmartASS.Target.PROGRADE));
-            menu.Add(new TextMenu.Item("RETROGRADE", (idx, item) => SetSmartASSTarget(MechJebModuleSmartASS.Target.RETROGRADE), (int)MechJebModuleSmartASS.Target.RETROGRADE));
-            menu.Add(new TextMenu.Item("NORMAL+", (idx, item) => SetSmartASSTarget(MechJebModuleSmartASS.Target.NORMAL_PLUS), (int)MechJebModuleSmartASS.Target.NORMAL_PLUS));
-            menu.Add(new TextMenu.Item("NORMAL-", (idx, item) => SetSmartASSTarget(MechJebModuleSmartASS.Target.NORMAL_MINUS), (int)MechJebModuleSmartASS.Target.NORMAL_MINUS));
-            menu.Add(new TextMenu.Item("RADIAL+", (idx, item) => SetSmartASSTarget(MechJebModuleSmartASS.Target.RADIAL_PLUS), (int)MechJebModuleSmartASS.Target.RADIAL_PLUS));
-            menu.Add(new TextMenu.Item("RADIAL-", (idx, item) => SetSmartASSTarget(MechJebModuleSmartASS.Target.RADIAL_MINUS), (int)MechJebModuleSmartASS.Target.RADIAL_MINUS));
-            AddMenuItem(menu, "NODE", () => SetSmartASSTarget(MechJebModuleSmartASS.Target.NODE),
+            menu.Add(new TextMenu.Item("PROGRADE", SetSmartASSTarget, (int)MechJebModuleSmartASS.Target.PROGRADE));
+            menu.Add(new TextMenu.Item("RETROGRADE", SetSmartASSTarget, (int)MechJebModuleSmartASS.Target.RETROGRADE));
+            menu.Add(new TextMenu.Item("NORMAL+", SetSmartASSTarget, (int)MechJebModuleSmartASS.Target.NORMAL_PLUS));
+            menu.Add(new TextMenu.Item("NORMAL-", SetSmartASSTarget, (int)MechJebModuleSmartASS.Target.NORMAL_MINUS));
+            menu.Add(new TextMenu.Item("RADIAL+", SetSmartASSTarget, (int)MechJebModuleSmartASS.Target.RADIAL_PLUS));
+            menu.Add(new TextMenu.Item("RADIAL-", SetSmartASSTarget, (int)MechJebModuleSmartASS.Target.RADIAL_MINUS));
+            menu.AddMenuItem("NODE", () => SetSmartASSTarget(MechJebModuleSmartASS.Target.NODE),
                 () => vessel != null && vessel.patchedConicSolver != null && 
                         vessel.patchedConicSolver.maneuverNodes.Count > 0);
-            AddMenuItem(menu, "------", null);
-            AddToggleItem(menu, "Force Roll", mjSmartASS, MechJebProxy.f_SmartASS_ForceRol);
-            AddMenuItem(menu, "[BACK]", () => PopMenu());
+            menu.AddMenuItem("------", null);
+            menu.AddToggleItem("Force Roll", mjSmartASS, MechJebProxy.f_SmartASS_ForceRol);
+            menu.AddMenuItem("[BACK]", () => PopMenu());
 
             return menu;
         }
 
         private TextMenu BuildSmartASSSurfaceMenu()
         {
-            var menu = new TrackedTextMenu();
+            var menu = new TextMenu();
             menu.labelColor = JUtil.ColorToColorTag(Color.white);
             menu.selectedColor = JUtil.ColorToColorTag(Color.green);
             menu.disabledColor = JUtil.ColorToColorTag(Color.gray);
 
             smartassSurfaceMenu = menu;
 
-            menu.Add(new TextMenu.Item("SURFACE PROGRADE", (idx, item) => SetSmartASSTarget(MechJebModuleSmartASS.Target.SURFACE_PROGRADE), (int)MechJebModuleSmartASS.Target.SURFACE_PROGRADE));
-            menu.Add(new TextMenu.Item("SURFACE RETROGRADE", (idx, item) => SetSmartASSTarget(MechJebModuleSmartASS.Target.SURFACE_RETROGRADE), (int)MechJebModuleSmartASS.Target.SURFACE_RETROGRADE));
-            menu.Add(new TextMenu.Item("HORIZONTAL+", (idx, item) => SetSmartASSTarget(MechJebModuleSmartASS.Target.HORIZONTAL_PLUS), (int)MechJebModuleSmartASS.Target.HORIZONTAL_PLUS));
-            menu.Add(new TextMenu.Item("HORIZONTAL-", (idx, item) => SetSmartASSTarget(MechJebModuleSmartASS.Target.HORIZONTAL_MINUS), (int)MechJebModuleSmartASS.Target.HORIZONTAL_MINUS));
-            menu.Add(new TextMenu.Item("VERTICAL+", (idx, item) => SetSmartASSTarget(MechJebModuleSmartASS.Target.VERTICAL_PLUS), (int)MechJebModuleSmartASS.Target.VERTICAL_PLUS));
-            menu.Add(new TextMenu.Item("SURFACE", (idx, item) => SetSmartASSTarget(MechJebModuleSmartASS.Target.SURFACE), (int)MechJebModuleSmartASS.Target.SURFACE));
-            AddMenuItem(menu, "------", null);
-            AddNumericItem(menu, "Heading",
+            menu.Add(new TextMenu.Item("SURFACE PROGRADE", SetSmartASSTarget, (int)MechJebModuleSmartASS.Target.SURFACE_PROGRADE));
+            menu.Add(new TextMenu.Item("SURFACE RETROGRADE", SetSmartASSTarget, (int)MechJebModuleSmartASS.Target.SURFACE_RETROGRADE));
+            menu.Add(new TextMenu.Item("HORIZONTAL+", SetSmartASSTarget, (int)MechJebModuleSmartASS.Target.HORIZONTAL_PLUS));
+            menu.Add(new TextMenu.Item("HORIZONTAL-", SetSmartASSTarget, (int)MechJebModuleSmartASS.Target.HORIZONTAL_MINUS));
+            menu.Add(new TextMenu.Item("VERTICAL+", SetSmartASSTarget, (int)MechJebModuleSmartASS.Target.VERTICAL_PLUS));
+            menu.Add(new TextMenu.Item("SURFACE", SetSmartASSTarget, (int)MechJebModuleSmartASS.Target.SURFACE));
+            menu.AddMenuItem("------", null);
+            menu.AddMJItem("Heading",
                 mjSmartASS.srfHdg,
                 1.0, v => v.ToString("F1") + "°", null, true, 0, true, 360);
-            AddNumericItem(menu, "Pitch",
+            menu.AddMJItem("Pitch",
                 mjSmartASS.srfPit,
                 1.0, v => v.ToString("F1") + "°", null, true, -90, true, 90);
-            AddNumericItem(menu, "Roll",
+            menu.AddMJItem("Roll",
                 mjSmartASS.srfRol,
                 1.0, v => v.ToString("F1") + "°", null, true, 0, true, 360);
-            AddMenuItem(menu, "[BACK]", () => PopMenu());
+            menu.AddMenuItem("[BACK]", () => PopMenu());
 
             return menu;
         }
 
         private TextMenu BuildSmartASSTargetMenu()
         {
-            var menu = new TrackedTextMenu();
+            var menu = new TextMenu();
             menu.labelColor = JUtil.ColorToColorTag(Color.white);
             menu.selectedColor = JUtil.ColorToColorTag(Color.green);
             menu.disabledColor = JUtil.ColorToColorTag(Color.gray);
 
             smartassTargetMenu = menu;
 
-            menu.Add(new TextMenu.Item("TARGET+", (idx, item) => SetSmartASSTarget(MechJebModuleSmartASS.Target.TARGET_PLUS), (int)MechJebModuleSmartASS.Target.TARGET_PLUS));
-            menu.Add(new TextMenu.Item("TARGET-", (idx, item) => SetSmartASSTarget(MechJebModuleSmartASS.Target.TARGET_MINUS), (int)MechJebModuleSmartASS.Target.TARGET_MINUS));
-            menu.Add(new TextMenu.Item("RELATIVE VEL+", (idx, item) => SetSmartASSTarget(MechJebModuleSmartASS.Target.RELATIVE_PLUS), (int)MechJebModuleSmartASS.Target.RELATIVE_PLUS));
-            menu.Add(new TextMenu.Item("RELATIVE VEL-", (idx, item) => SetSmartASSTarget(MechJebModuleSmartASS.Target.RELATIVE_MINUS), (int)MechJebModuleSmartASS.Target.RELATIVE_MINUS));
-            menu.Add(new TextMenu.Item("PARALLEL+", (idx, item) => SetSmartASSTarget(MechJebModuleSmartASS.Target.PARALLEL_PLUS), (int)MechJebModuleSmartASS.Target.PARALLEL_PLUS));
-            menu.Add(new TextMenu.Item("PARALLEL-", (idx, item) => SetSmartASSTarget(MechJebModuleSmartASS.Target.PARALLEL_MINUS), (int)MechJebModuleSmartASS.Target.PARALLEL_MINUS));
-            AddMenuItem(menu, "[BACK]", () => PopMenu());
+            menu.Add(new TextMenu.Item("TARGET+", SetSmartASSTarget, (int)MechJebModuleSmartASS.Target.TARGET_PLUS));
+            menu.Add(new TextMenu.Item("TARGET-", SetSmartASSTarget, (int)MechJebModuleSmartASS.Target.TARGET_MINUS));
+            menu.Add(new TextMenu.Item("RELATIVE VEL+", SetSmartASSTarget, (int)MechJebModuleSmartASS.Target.RELATIVE_PLUS));
+            menu.Add(new TextMenu.Item("RELATIVE VEL-", SetSmartASSTarget, (int)MechJebModuleSmartASS.Target.RELATIVE_MINUS));
+            menu.Add(new TextMenu.Item("PARALLEL+", SetSmartASSTarget, (int)MechJebModuleSmartASS.Target.PARALLEL_PLUS));
+            menu.Add(new TextMenu.Item("PARALLEL-", SetSmartASSTarget, (int)MechJebModuleSmartASS.Target.PARALLEL_MINUS));
+            menu.AddMenuItem("[BACK]", () => PopMenu());
 
             return menu;
         }
 
         private TextMenu BuildSmartASSAdvancedMenu()
         {
-            var menu = new TrackedTextMenu();
+            var menu = new TextMenu();
             menu.labelColor = JUtil.ColorToColorTag(Color.white);
             menu.selectedColor = JUtil.ColorToColorTag(Color.green);
             menu.disabledColor = JUtil.ColorToColorTag(Color.gray);
 
-            AddMenuItem(menu, "Set ADVANCED Mode", () => SetSmartASSTarget(MechJebModuleSmartASS.Target.ADVANCED));
-            var refItem = new TextMenu.Item("Reference: [ORBIT]", (idx, item) => CycleSmartASSAdvancedReference(1));
-            menu.Add(refItem);
-            GetTrackedItems(menu).Add(new TrackedMenuItem
-            {
-                item = refItem,
-                id = "SmartASSAdvReference",
-                isEnabled = null,
-                getLabel = () => "Reference: [" + mjSmartASS.advReference.ToString() + "]"
-            });
-
-            var dirItem = new TextMenu.Item("Direction: [FORWARD]", (idx, item) => CycleSmartASSAdvancedDirection(1));
-            menu.Add(dirItem);
-            GetTrackedItems(menu).Add(new TrackedMenuItem
-            {
-                item = dirItem,
-                id = "SmartASSAdvDirection",
-                isEnabled = null,
-                getLabel = () => "Direction: [" + mjSmartASS.advDirection.ToString() + "]"
-            });
-            AddToggleItem(menu, "Force Roll", mjSmartASS, MechJebProxy.f_SmartASS_ForceRol);
-            AddNumericItem(menu, "Roll Angle",
+            menu.Add(new TextMenu.Item("Set ADVANCED Mode", SetSmartASSTarget, (int)MechJebModuleSmartASS.Target.ADVANCED));
+            menu.AddMenuItem(() => "Reference: [" + mjSmartASS.advReference.ToString() + "]", () => CycleSmartASSAdvancedReference(1));
+            menu.AddMenuItem(() => "Direction: [" + mjSmartASS.advDirection.ToString() + "]", () => CycleSmartASSAdvancedDirection(1));
+            menu.AddToggleItem("Force Roll", mjSmartASS, MechJebProxy.f_SmartASS_ForceRol);
+            menu.AddMJItem("Roll Angle",
                 mjSmartASS.rol,
                 1.0, v => v.ToString("F1") + "°", null, true, 0, true, 360);
-            AddMenuItem(menu, "[BACK]", () => PopMenu());
+            menu.AddMenuItem("[BACK]", () => PopMenu());
 
             return menu;
         }
@@ -501,6 +273,11 @@ namespace JSI
         private void SetSmartASSAuto()
         {
             SetSmartASSTarget(MechJebModuleSmartASS.Target.AUTO);
+        }
+
+        private void SetSmartASSTarget(int target, TextMenu.Item item)
+        {
+            SetSmartASSTarget((MechJebModuleSmartASS.Target)target);
         }
 
         private void SetSmartASSTarget(MechJebModuleSmartASS.Target target)
@@ -536,177 +313,177 @@ namespace JSI
         #region Ascent Menu
         private TextMenu BuildAscentMenu()
         {
-            var menu = new TrackedTextMenu();
+            var menu = new TextMenu();
             menu.labelColor = JUtil.ColorToColorTag(Color.white);
             menu.selectedColor = JUtil.ColorToColorTag(Color.green);
             menu.disabledColor = JUtil.ColorToColorTag(Color.gray);
 
-            AddToggleItem(menu, "ENGAGE Ascent Autopilot",
+            menu.AddToggleItem("ENGAGE Ascent Autopilot",
                 () => mjCore.AscentSettings?.AscentAutopilot?.Enabled == true,
                 (val) => MechJebProxy.SetAscentAutopilotEngaged(mjCore, val));
 
-            AddMenuItem(menu, "------", null);
+            menu.AddMenuItem("------", null);
 
             // Orbit parameters
-            AddNumericItem(menu, "Target Altitude",
+            menu.AddMJItem("Target Altitude",
                 mjCore.AscentSettings.DesiredOrbitAltitude,
                 1000.0, v => (v / 1000.0).ToString("F1") + " km", null, true, 1000.0, false, 0);
-            AddNumericItem(menu, "Target Inclination", mjCore.AscentSettings.DesiredInclination,
+            menu.AddMJItem("Target Inclination", mjCore.AscentSettings.DesiredInclination,
                 0.5, v => v.ToString("F2") + "°", null, true, 0, true, 180);
-            AddMenuItem(menu, "Set to Current Inclination", () =>
+            menu.AddMenuItem("Set to Current Inclination", () =>
             {
                 if (mjCore.AscentSettings == null || vessel == null) return;
                 mjCore.AscentSettings.DesiredInclination.Val = vessel.orbit.inclination;
             });
 
-            AddMenuItem(menu, "------", null);
+            menu.AddMenuItem("------", null);
 
             // Sub-menus
-            AddMenuItem(menu, "Path Editor", () => PushMenu(BuildAscentPathMenu()));
-            AddMenuItem(menu, "Staging & Thrust", () => PushMenu(BuildAscentStagingMenu()));
-            AddMenuItem(menu, "Launch Parameters", () => PushMenu(BuildAscentLaunchMenu()));
-            AddMenuItem(menu, "Guidance & Safety", () => PushMenu(BuildAscentGuidanceMenu()));
+            menu.AddMenuItem("Path Editor", () => PushMenu(BuildAscentPathMenu()));
+            menu.AddMenuItem("Staging & Thrust", () => PushMenu(BuildAscentStagingMenu()));
+            menu.AddMenuItem("Launch Parameters", () => PushMenu(BuildAscentLaunchMenu()));
+            menu.AddMenuItem("Guidance & Safety", () => PushMenu(BuildAscentGuidanceMenu()));
 
-            AddMenuItem(menu, "------", null);
+            menu.AddMenuItem("------", null);
 
-            AddToggleItem(menu, "Auto-Warp",
+            menu.AddToggleItem("Auto-Warp",
                 () => mjCore.Node.Autowarp,
                 (val) => mjCore.Node.Autowarp = val);
 
-            AddMenuItem(menu, "[BACK]", () => PopMenu());
+            menu.AddMenuItem("[BACK]", () => PopMenu());
 
             return menu;
         }
 
         private TextMenu BuildAscentPathMenu()
         {
-            var menu = new TrackedTextMenu();
+            var menu = new TextMenu();
             menu.labelColor = JUtil.ColorToColorTag(Color.white);
             menu.selectedColor = JUtil.ColorToColorTag(Color.green);
             menu.disabledColor = JUtil.ColorToColorTag(Color.gray);
 
-            AddToggleItem(menu, "Automatic Altitude Turn", mjCore.AscentSettings, MechJebProxy.f_Ascent_AutoPath);
+            menu.AddToggleItem("Automatic Altitude Turn", mjCore.AscentSettings, MechJebProxy.f_Ascent_AutoPath);
 
-            AddNumericItem(menu, "Turn Start Alt", mjCore.AscentSettings.TurnStartAltitude,
+            menu.AddMJItem("Turn Start Alt", mjCore.AscentSettings.TurnStartAltitude,
                 1000.0, v => (v / 1000.0).ToString("F1") + " km",
                 () => !mjCore.AscentSettings.AutoPath);
 
-            AddNumericItem(menu, "Turn Start Vel", mjCore.AscentSettings.TurnStartVelocity,
+            menu.AddMJItem("Turn Start Vel", mjCore.AscentSettings.TurnStartVelocity,
                 10.0, v => v.ToString("F0") + " m/s",
                 () => !mjCore.AscentSettings.AutoPath);
 
-            AddNumericItem(menu, "Turn End Alt", mjCore.AscentSettings.TurnEndAltitude,
+            menu.AddMJItem("Turn End Alt", mjCore.AscentSettings.TurnEndAltitude,
                 1000.0, v => (v / 1000.0).ToString("F1") + " km",
                 () => !mjCore.AscentSettings.AutoPath);
 
-            AddNumericItem(menu, "Final Flight Path Angle", mjCore.AscentSettings.TurnEndAngle,
+            menu.AddMJItem("Final Flight Path Angle", mjCore.AscentSettings.TurnEndAngle,
                 0.5, v => v.ToString("F1") + "°");
 
-            AddNumericItem(menu, "Turn Shape", mjCore.AscentSettings.TurnShapeExponent,
+            menu.AddMJItem("Turn Shape", mjCore.AscentSettings.TurnShapeExponent,
                 0.01, v => (v * 100.0).ToString("F0") + "%");
 
-            AddNumericItem(menu, "Auto Turn %", 
+            menu.AddNumericItem("Auto Turn %", 
                 () => mjCore.AscentSettings.AutoTurnPerc * 100.0,
                 (val) => mjCore.AscentSettings.AutoTurnPerc = (float)(val / 100.0),
                 0.5, v => v.ToString("F1") + "%",
                 () => mjCore.AscentSettings.AutoPath, true, 0.5, true, 105.0);
 
-            AddNumericItem(menu, "Auto Turn Spd", mjCore.AscentSettings.AutoTurnSpdFactor,
+            menu.AddMJItem("Auto Turn Spd", mjCore.AscentSettings.AutoTurnSpdFactor,
                 0.5, v => v.ToString("F1"),
                 () => mjCore.AscentSettings.AutoPath, true, 4.0, true, 80.0);
 
-            AddMenuItem(menu, "[BACK]", () => PopMenu());
+            menu.AddMenuItem("[BACK]", () => PopMenu());
 
             return menu;
         }
 
         private TextMenu BuildAscentStagingMenu()
         {
-            var menu = new TrackedTextMenu();
+            var menu = new TextMenu();
             menu.labelColor = JUtil.ColorToColorTag(Color.white);
             menu.selectedColor = JUtil.ColorToColorTag(Color.green);
             menu.disabledColor = JUtil.ColorToColorTag(Color.gray);
 
-            AddToggleItem(menu, "Autostage",
+            menu.AddToggleItem("Autostage",
                 () => mjCore.AscentSettings.Autostage,
                 (val) => mjCore.AscentSettings.Autostage = val);
-            AddNumericItem(menu, "Stop at Stage", mjCore.Staging.AutostageLimit,
+            menu.AddMJItem("Stop at Stage", mjCore.Staging.AutostageLimit,
                 1.0, v => v.ToString("F0"), null, true, 0, false, 0);
 
-            AddMenuItem(menu, "------", null);
+            menu.AddMenuItem("------", null);
 
-            AddToggleItem(menu, "Limit to Prevent Overheats", mjCore.Thrust, MechJebProxy.f_Thrust_LimitToPreventOverheats);
-            AddToggleItem(menu, "Limit by Max Q", mjCore.Thrust, MechJebProxy.f_Thrust_LimitDynamicPressure);
-            AddNumericItem(menu, "Max Q", mjCore.Thrust.MaxDynamicPressure,
+            menu.AddToggleItem("Limit to Prevent Overheats", mjCore.Thrust, MechJebProxy.f_Thrust_LimitToPreventOverheats);
+            menu.AddToggleItem("Limit by Max Q", mjCore.Thrust, MechJebProxy.f_Thrust_LimitDynamicPressure);
+            menu.AddMJItem("Max Q", mjCore.Thrust.MaxDynamicPressure,
                 1000.0, v => v.ToString("F0") + " Pa", null, true, 0, false, 0);
-            AddToggleItem(menu, "Limit Acceleration", mjCore.Thrust, MechJebProxy.f_Thrust_LimitAcceleration);
-            AddNumericItem(menu, "Max Acceleration", mjCore.Thrust.MaxAcceleration,
+            menu.AddToggleItem("Limit Acceleration", mjCore.Thrust, MechJebProxy.f_Thrust_LimitAcceleration);
+            menu.AddMJItem("Max Acceleration", mjCore.Thrust.MaxAcceleration,
                 0.1, v => v.ToString("F1") + " m/s²", null, true, 0, false, 0);
-            AddToggleItem(menu, "Limit Throttle", mjCore.Thrust, MechJebProxy.f_Thrust_LimitThrottle);
-            AddNumericItem(menu, "Max Throttle", mjCore.Thrust.MaxThrottle,
+            menu.AddToggleItem("Limit Throttle", mjCore.Thrust, MechJebProxy.f_Thrust_LimitThrottle);
+            menu.AddMJItem("Max Throttle", mjCore.Thrust.MaxThrottle,
                 1.0, v => v.ToString("F0") + "%", null, true, 0, true, 100);
 
-            AddMenuItem(menu, "[BACK]", () => PopMenu());
+            menu.AddMenuItem("[BACK]", () => PopMenu());
 
             return menu;
         }
 
         private TextMenu BuildAscentLaunchMenu()
         {
-            var menu = new TrackedTextMenu();
+            var menu = new TextMenu();
             menu.labelColor = JUtil.ColorToColorTag(Color.white);
             menu.selectedColor = JUtil.ColorToColorTag(Color.green);
             menu.disabledColor = JUtil.ColorToColorTag(Color.gray);
 
-            AddNumericItem(menu, "Desired LAN", mjCore.AscentSettings.DesiredLan,
+            menu.AddMJItem("Desired LAN", mjCore.AscentSettings.DesiredLan,
                 0.5, v => v.ToString("F2") + "°", null, true, 0, true, 360);
-            AddNumericItem(menu, "Launch Phase Angle", mjCore.AscentSettings.LaunchPhaseAngle,
+            menu.AddMJItem("Launch Phase Angle", mjCore.AscentSettings.LaunchPhaseAngle,
                 0.5, v => v.ToString("F2") + "°", null, true, -360, true, 360);
-            AddNumericItem(menu, "Launch LAN Difference", mjCore.AscentSettings.LaunchLANDifference,
+            menu.AddMJItem("Launch LAN Difference", mjCore.AscentSettings.LaunchLANDifference,
                 0.5, v => v.ToString("F2") + "°", null, true, -360, true, 360);
 
-            AddMenuItem(menu, "------", null);
+            menu.AddMenuItem("------", null);
 
-            AddNumericItem(menu, "Warp Countdown", mjCore.AscentSettings.WarpCountDown,
+            menu.AddMJItem("Warp Countdown", mjCore.AscentSettings.WarpCountDown,
                 1.0, v => v.ToString("F0") + " s", null, true, 0, false, 0);
-            AddToggleItem(menu, "Skip Circularization",
+            menu.AddToggleItem("Skip Circularization",
                 () => mjCore.AscentSettings.SkipCircularization,
                 (val) => mjCore.AscentSettings.SkipCircularization = val);
 
-            AddMenuItem(menu, "[BACK]", () => PopMenu());
+            menu.AddMenuItem("[BACK]", () => PopMenu());
             return menu;
         }
 
         private TextMenu BuildAscentGuidanceMenu()
         {
-            var menu = new TrackedTextMenu();
+            var menu = new TextMenu();
             menu.labelColor = JUtil.ColorToColorTag(Color.white);
             menu.selectedColor = JUtil.ColorToColorTag(Color.green);
             menu.disabledColor = JUtil.ColorToColorTag(Color.gray);
 
-            AddToggleItem(menu, "Force Roll", mjCore.AscentSettings, MechJebProxy.f_Ascent_ForceRoll);
-            AddNumericItem(menu, "Vertical Roll", mjCore.AscentSettings.VerticalRoll,
+            menu.AddToggleItem("Force Roll", mjCore.AscentSettings, MechJebProxy.f_Ascent_ForceRoll);
+            menu.AddMJItem("Vertical Roll", mjCore.AscentSettings.VerticalRoll,
                 1.0, v => v.ToString("F1") + "°", null, true, -180, true, 180);
-            AddNumericItem(menu, "Turn Roll", mjCore.AscentSettings.TurnRoll,
+            menu.AddMJItem("Turn Roll", mjCore.AscentSettings.TurnRoll,
                 1.0, v => v.ToString("F1") + "°", null, true, -180, true, 180);
-            AddNumericItem(menu, "Roll Altitude", mjCore.AscentSettings.RollAltitude,
+            menu.AddMJItem("Roll Altitude", mjCore.AscentSettings.RollAltitude,
                 1.0, v => v.ToString("F1") + " km", null, true, 0, false, 0);
 
-            AddMenuItem(menu, "------", null);
+            menu.AddMenuItem("------", null);
 
-            AddToggleItem(menu, "Limit AoA", mjCore.AscentSettings, MechJebProxy.f_Ascent_LimitAoA);
-            AddNumericItem(menu, "Max AoA", mjCore.AscentSettings.MaxAoA,
+            menu.AddToggleItem("Limit AoA", mjCore.AscentSettings, MechJebProxy.f_Ascent_LimitAoA);
+            menu.AddMJItem("Max AoA", mjCore.AscentSettings.MaxAoA,
                 0.5, v => v.ToString("F1") + "°", null, true, 0, true, 45);
-            AddNumericItem(menu, "AoA Fadeout Pressure", mjCore.AscentSettings.AOALimitFadeoutPressure,
+            menu.AddMJItem("AoA Fadeout Pressure", mjCore.AscentSettings.AOALimitFadeoutPressure,
                 100.0, v => v.ToString("F0") + " Pa", null, true, 0, false, 0);
 
-            AddMenuItem(menu, "------", null);
+            menu.AddMenuItem("------", null);
 
-            AddToggleItem(menu, "Corrective Steering", mjCore.AscentSettings, MechJebProxy.f_Ascent_CorrectiveSteering);
-            AddNumericItem(menu, "Corrective Gain", mjCore.AscentSettings.CorrectiveSteeringGain,
+            menu.AddToggleItem("Corrective Steering", mjCore.AscentSettings, MechJebProxy.f_Ascent_CorrectiveSteering);
+            menu.AddMJItem("Corrective Gain", mjCore.AscentSettings.CorrectiveSteeringGain,
                 0.1, v => v.ToString("F2"));
 
-            AddMenuItem(menu, "[BACK]", () => PopMenu());
+            menu.AddMenuItem("[BACK]", () => PopMenu());
             return menu;
         }
         #endregion
@@ -714,106 +491,73 @@ namespace JSI
         #region Landing Menu
         private TextMenu BuildLandingMenu()
         {
-            var menu = new TrackedTextMenu();
+            var menu = new TextMenu();
             menu.labelColor = JUtil.ColorToColorTag(Color.white);
             menu.selectedColor = JUtil.ColorToColorTag(Color.green);
             menu.disabledColor = JUtil.ColorToColorTag(Color.gray);
 
             // Actions
-            AddMenuItem(menu, "Land at Target", () => mjCore.Landing.LandAtPositionTarget(mjLandingGuidance),
+            menu.AddMenuItem("Land at Target", () => mjCore.Landing.LandAtPositionTarget(mjLandingGuidance),
                 () => mjCore.Target.PositionTargetExists);
-            AddMenuItem(menu, "Land Somewhere", () => mjCore.Landing.LandUntargeted(mjLandingGuidance));
-            AddMenuItem(menu, "STOP", () => mjCore.Landing.StopLanding(),
+            menu.AddMenuItem("Land Somewhere", () => mjCore.Landing.LandUntargeted(mjLandingGuidance));
+            menu.AddMenuItem("STOP", () => mjCore.Landing.StopLanding(),
                 () => mjCore.Landing != null && mjCore.Landing.Enabled);
 
-            AddMenuItem(menu, "------", null);
+            menu.AddMenuItem("------", null);
 
             // Targeting
-            AddMenuItem(menu, "Pick Target on Map", () => mjCore.Target.PickPositionTargetOnMap());
-            AddNumericItem(menu, "Target Latitude",
+            menu.AddMenuItem("Pick Target on Map", () => mjCore.Target.PickPositionTargetOnMap());
+            menu.AddNumericItem("Target Latitude",
                 () => mjCore.Target.targetLatitude,
                 (val) => mjCore.Target.SetPositionTarget(vessel?.mainBody, val, mjCore.Target.targetLongitude),
                 0.1, v => v.ToString("F3") + "°", null, true, -90, true, 90);
-            AddNumericItem(menu, "Target Longitude",
+            menu.AddNumericItem("Target Longitude",
                 () => mjCore.Target.targetLongitude,
                 (val) => mjCore.Target.SetPositionTarget(vessel?.mainBody, mjCore.Target.targetLatitude, val),
                 0.1, v => v.ToString("F3") + "°", null, true, -180, true, 180);
 
-            AddMenuItem(menu, "------", null);
+            menu.AddMenuItem("------", null);
 
             // Settings
-            AddNumericItem(menu, "Touchdown Speed", mjCore.Landing.TouchdownSpeed,
+            menu.AddMJItem("Touchdown Speed", mjCore.Landing.TouchdownSpeed,
                 0.5, v => v.ToString("F1") + " m/s", null, true, 0, false, 0);
-            AddToggleItem(menu, "Deploy Gear", mjCore.Landing, MechJebProxy.f_Landing_DeployGears);
-            AddToggleItem(menu, "Deploy Chutes", mjCore.Landing, MechJebProxy.f_Landing_DeployChutes);
-            AddNumericItem(menu, "Limit Gear Stage", mjCore.Landing.LimitGearsStage,
+            menu.AddToggleItem("Deploy Gear", mjCore.Landing, MechJebProxy.f_Landing_DeployGears);
+            menu.AddToggleItem("Deploy Chutes", mjCore.Landing, MechJebProxy.f_Landing_DeployChutes);
+            menu.AddMJItem("Limit Gear Stage", mjCore.Landing.LimitGearsStage,
                 1.0, v => v.ToString("F0"), null, true, 0, false, 0);
-            AddNumericItem(menu, "Limit Chute Stage", mjCore.Landing.LimitChutesStage,
+            menu.AddMJItem("Limit Chute Stage", mjCore.Landing.LimitChutesStage,
                 1.0, v => v.ToString("F0"), null, true, 0, false, 0);
-            AddToggleItem(menu, "Use RCS", mjCore.Landing, MechJebProxy.f_Landing_UseRCS);
+            menu.AddToggleItem("Use RCS", mjCore.Landing, MechJebProxy.f_Landing_UseRCS);
 
-            AddMenuItem(menu, "------", null);
+            menu.AddMenuItem("------", null);
 
             // Predictions sub-menu
-            AddMenuItem(menu, "Predictions Info", () => PushMenu(BuildLandingPredictionsMenu()));
+            menu.AddMenuItem("Predictions Info", () => PushMenu(BuildLandingPredictionsMenu()));
 
-            AddMenuItem(menu, "[BACK]", () => PopMenu());
+            menu.AddMenuItem("[BACK]", () => PopMenu());
 
             return menu;
         }
 
         private TextMenu BuildLandingPredictionsMenu()
         {
-            var menu = new TrackedTextMenu();
+            var menu = new TextMenu();
             menu.labelColor = JUtil.ColorToColorTag(Color.white);
             menu.selectedColor = JUtil.ColorToColorTag(Color.green);
             menu.disabledColor = JUtil.ColorToColorTag(Color.gray);
 
-            AddToggleItem(menu, "Show Trajectory", mjLandingPredictions, MechJebProxy.f_Landing_ShowTrajectory);
+            menu.AddToggleItem("Show Trajectory", mjLandingPredictions, MechJebProxy.f_Landing_ShowTrajectory);
 
-            AddMenuItem(menu, "------", null);
+            menu.AddMenuItem("------", null);
 
             // These are info items, will be updated dynamically
-            AddMenuItem(menu, "Predicted Landing:", null);
-            var latItem = new TextMenu.Item("  Lat: ---", null);
-            var lonItem = new TextMenu.Item("  Lon: ---", null);
-            var timeItem = new TextMenu.Item("  Time: ---", null);
-            var geesItem = new TextMenu.Item("  Max Gees: ---", null);
-            menu.Add(latItem);
-            menu.Add(lonItem);
-            menu.Add(timeItem);
-            menu.Add(geesItem);
+            menu.AddMenuItem("Predicted Landing:", null);
+            menu.AddMenuItem(() => "  Lat: " + GetLandingPredLatitude());
+            menu.AddMenuItem(() => "  Lon: " + GetLandingPredLongitude());
+            menu.AddMenuItem(() => "  Time: " + GetLandingPredTime());
+            menu.AddMenuItem(() => "  Max Gees: " + GetLandingPredGees());
 
-            GetTrackedItems(menu).Add(new TrackedMenuItem
-            {
-                item = latItem,
-                id = "LandingPredLat",
-                isEnabled = null,
-                getLabel = () => "  Lat: " + GetLandingPredLatitude()
-            });
-            GetTrackedItems(menu).Add(new TrackedMenuItem
-            {
-                item = lonItem,
-                id = "LandingPredLon",
-                isEnabled = null,
-                getLabel = () => "  Lon: " + GetLandingPredLongitude()
-            });
-            GetTrackedItems(menu).Add(new TrackedMenuItem
-            {
-                item = timeItem,
-                id = "LandingPredTime",
-                isEnabled = null,
-                getLabel = () => "  Time: " + GetLandingPredTime()
-            });
-            GetTrackedItems(menu).Add(new TrackedMenuItem
-            {
-                item = geesItem,
-                id = "LandingPredGees",
-                isEnabled = null,
-                getLabel = () => "  Max Gees: " + GetLandingPredGees()
-            });
-
-            AddMenuItem(menu, "[BACK]", () => PopMenu());
+            menu.AddMenuItem("[BACK]", () => PopMenu());
 
             return menu;
         }
@@ -824,60 +568,60 @@ namespace JSI
         // Menu matching IMGUI Maneuver Planner exactly
         private TextMenu BuildManeuverPlannerMenu()
         {
-            var menu = new TrackedTextMenu();
+            var menu = new TextMenu();
             menu.labelColor = JUtil.ColorToColorTag(Color.white);
             menu.selectedColor = JUtil.ColorToColorTag(Color.green);
             menu.disabledColor = JUtil.ColorToColorTag(Color.gray);
 
             // Match exact IMGUI dropdown order (alphabetical)
-            AddMenuItem(menu, "advanced transfer to another planet", () => PushMenu(BuildAdvancedTransferMenu()),
+            menu.AddMenuItem("advanced transfer to another planet", () => PushMenu(BuildAdvancedTransferMenu()),
                 () => FlightGlobals.fetch.VesselTarget is CelestialBody);
-            AddMenuItem(menu, "change apoapsis", () => PushMenu(BuildOperationMenu(MechJebProxy.OpChangeApoapsis, PopulateChangeApoapsisMenu)));
-            AddMenuItem(menu, "change both Pe and Ap", () => PushMenu(BuildOperationMenu(MechJebProxy.OpEllipticize, PopulateEllipticizeMenu)));
-            AddMenuItem(menu, "change eccentricity", () => PushMenu(BuildOperationMenu(MechJebProxy.OpEccentricity, PopulateChangeEccentricityMenu)));
-            AddMenuItem(menu, "change inclination", () => PushMenu(BuildOperationMenu(MechJebProxy.OpChangeInclination, PopulateChangeInclinationMenu)));
-            AddMenuItem(menu, "change longitude of ascending node", () => PushMenu(BuildOperationMenu(MechJebProxy.OpChangeLAN, PopulateChangeLANMenu)));
-            AddMenuItem(menu, "change periapsis", () => PushMenu(BuildOperationMenu(MechJebProxy.OpChangePeriapsis, PopulateChangePeriapsisMenu)));
-            AddMenuItem(menu, "change semi-major axis", () => PushMenu(BuildOperationMenu(MechJebProxy.OpChangeSemiMajorAxis, PopulateChangeSMAMenu)));
-            AddMenuItem(menu, "change surface longitude of apsis", () => PushMenu(BuildOperationMenu(MechJebProxy.OpLongitude, PopulateChangeSurfaceLongitudeMenu)));
-            AddMenuItem(menu, "circularize", () => PushMenu(BuildOperationMenu(MechJebProxy.OpCircularize)));
-            AddMenuItem(menu, "fine tune closest approach to target", () => PushMenu(BuildOperationMenu(MechJebProxy.OpCourseCorrection, PopulateCourseCorrectMenu)),
+            menu.AddMenuItem("change apoapsis", () => PushMenu(BuildOperationMenu(MechJebProxy.OpChangeApoapsis, PopulateChangeApoapsisMenu)));
+            menu.AddMenuItem("change both Pe and Ap", () => PushMenu(BuildOperationMenu(MechJebProxy.OpEllipticize, PopulateEllipticizeMenu)));
+            menu.AddMenuItem("change eccentricity", () => PushMenu(BuildOperationMenu(MechJebProxy.OpEccentricity, PopulateChangeEccentricityMenu)));
+            menu.AddMenuItem("change inclination", () => PushMenu(BuildOperationMenu(MechJebProxy.OpChangeInclination, PopulateChangeInclinationMenu)));
+            menu.AddMenuItem("change longitude of ascending node", () => PushMenu(BuildOperationMenu(MechJebProxy.OpChangeLAN, PopulateChangeLANMenu)));
+            menu.AddMenuItem("change periapsis", () => PushMenu(BuildOperationMenu(MechJebProxy.OpChangePeriapsis, PopulateChangePeriapsisMenu)));
+            menu.AddMenuItem("change semi-major axis", () => PushMenu(BuildOperationMenu(MechJebProxy.OpChangeSemiMajorAxis, PopulateChangeSMAMenu)));
+            menu.AddMenuItem("change surface longitude of apsis", () => PushMenu(BuildOperationMenu(MechJebProxy.OpLongitude, PopulateChangeSurfaceLongitudeMenu)));
+            menu.AddMenuItem("circularize", () => PushMenu(BuildOperationMenu(MechJebProxy.OpCircularize)));
+            menu.AddMenuItem("fine tune closest approach to target", () => PushMenu(BuildOperationMenu(MechJebProxy.OpCourseCorrection, PopulateCourseCorrectMenu)),
                 () => FlightGlobals.fetch.VesselTarget != null);
-            AddMenuItem(menu, "intercept target at chosen time", () => PushMenu(BuildOperationMenu(MechJebProxy.OpLambert, PopulateLambertMenu)),
+            menu.AddMenuItem("intercept target at chosen time", () => PushMenu(BuildOperationMenu(MechJebProxy.OpLambert, PopulateLambertMenu)),
                 () => FlightGlobals.fetch.VesselTarget != null);
-            AddMenuItem(menu, "match planes with target", () => PushMenu(BuildOperationMenu(MechJebProxy.OpMatchPlane)),
+            menu.AddMenuItem("match planes with target", () => PushMenu(BuildOperationMenu(MechJebProxy.OpMatchPlane)),
                 () => FlightGlobals.fetch.VesselTarget != null);
-            AddMenuItem(menu, "match velocities with target", () => PushMenu(BuildOperationMenu(MechJebProxy.OpMatchVelocity)),
+            menu.AddMenuItem("match velocities with target", () => PushMenu(BuildOperationMenu(MechJebProxy.OpMatchVelocity)),
                 () => FlightGlobals.fetch.VesselTarget != null);
-            AddMenuItem(menu, "resonant orbit", () => PushMenu(BuildOperationMenu(MechJebProxy.OpResonantOrbit, PopulateResonantOrbitMenu)));
-            AddMenuItem(menu, "return from a moon", () => PushMenu(BuildOperationMenu(MechJebProxy.OpMoonReturn, PopulatedMoonReturnMenu)),
+            menu.AddMenuItem("resonant orbit", () => PushMenu(BuildOperationMenu(MechJebProxy.OpResonantOrbit, PopulateResonantOrbitMenu)));
+            menu.AddMenuItem("return from a moon", () => PushMenu(BuildOperationMenu(MechJebProxy.OpMoonReturn, PopulatedMoonReturnMenu)),
                 () => vessel != null && vessel.mainBody != null && vessel.mainBody.referenceBody != null && 
                         vessel.mainBody.referenceBody != Planetarium.fetch.Sun);
-            AddMenuItem(menu, "transfer to another planet", () => PushMenu(BuildOperationMenu(MechJebProxy.OpInterplanetaryTransfer, PopulateInterplanetaryTransferMenu)),
+            menu.AddMenuItem("transfer to another planet", () => PushMenu(BuildOperationMenu(MechJebProxy.OpInterplanetaryTransfer, PopulateInterplanetaryTransferMenu)),
                 () => FlightGlobals.fetch.VesselTarget is CelestialBody);
-            AddMenuItem(menu, "two impulse (Hohmann) transfer to target", () => PushMenu(BuildOperationMenu(MechJebProxy.OpGeneric, PopulateHohmannMenu)),
+            menu.AddMenuItem("two impulse (Hohmann) transfer to target", () => PushMenu(BuildOperationMenu(MechJebProxy.OpGeneric, PopulateHohmannMenu)),
                 () => FlightGlobals.fetch.VesselTarget != null);
 
-            AddMenuItem(menu, "------", null);
-            AddMenuItem(menu, "Remove ALL nodes", () => RemoveAllNodes());
-            AddMenuItem(menu, "------", null);
+            menu.AddMenuItem("------", null);
+            menu.AddMenuItem("Remove ALL nodes", () => RemoveAllNodes());
+            menu.AddMenuItem("------", null);
             
             // Node execution controls (matching IMGUI bottom controls)
-            AddToggleItem(menu, "Auto-warp",
+            menu.AddToggleItem("Auto-warp",
                 () => mjCore.Node.Autowarp,
                 (val) => mjCore.Node.Autowarp = val);
-            AddNumericItem(menu, "Lead time",
+            menu.AddMJItem("Lead time",
                 mjCore.Node.LeadTime,
                 1.0, v => v.ToString("F0") + " s", null, true, 0, false, 0);
 
-            AddMenuItem(menu, "[BACK]", () => PopMenu());
+            menu.AddMenuItem("[BACK]", () => PopMenu());
 
             return menu;
         }
 
         private TextMenu CreateOperationMenu(Operation op)
         {
-            return new TrackedTextMenu
+            return new TextMenu
             {
                 labelColor = JUtil.ColorToColorTag(Color.white),
                 selectedColor = JUtil.ColorToColorTag(Color.green),
@@ -904,10 +648,10 @@ namespace JSI
             }
             else
             {
-                AddMenuItem(menu, "[Create Node]", () => MechJebProxy.ExecuteOperation(op, mjCore, vessel));
+                menu.AddMenuItem("[Create Node]", () => MechJebProxy.ExecuteOperation(op, mjCore, vessel));
             }
 
-            AddMenuItem(menu, "[BACK]", () => PopMenu());
+            menu.AddMenuItem("[BACK]", () => PopMenu());
 
             return menu;
         }
@@ -916,7 +660,7 @@ namespace JSI
         {
             var timeSelector = op.GetTimeSelector();
 
-            AddMenuItem(menu, "Schedule the burn:", null);
+            menu.AddMenuItem("Schedule the burn:", null);
 
             for (int i = 0; i < timeSelector._timeRefNames.Length; ++i)
             {
@@ -926,13 +670,13 @@ namespace JSI
                 switch (timeReference)
                 {
                     case TimeReference.X_FROM_NOW:
-                        AddMenuItem(menu, timeRefName, () => PushMenu(BuildTimeSelectorLeadTimeMenu(op, timeRefIndex)));
+                        menu.AddMenuItem(timeRefName, () => PushMenu(BuildTimeSelectorLeadTimeMenu(op, timeRefIndex)));
                         break;
                     case TimeReference.ALTITUDE:
-                        AddMenuItem(menu, timeRefName, () => PushMenu(BuildTimeSelectorAltitudeMenu(op, timeRefIndex)));
+                        menu.AddMenuItem(timeRefName, () => PushMenu(BuildTimeSelectorAltitudeMenu(op, timeRefIndex)));
                         break;
                     default:
-                        AddMenuItem(menu, timeRefName, () => ExecuteOperation(op, timeRefIndex));
+                        menu.AddMenuItem(timeRefName, () => ExecuteOperation(op, timeRefIndex));
                         break;
                 }
             }
@@ -943,7 +687,7 @@ namespace JSI
         /// </summary>
         private TextMenu BuildTimeSelectorAltitudeMenu(Operation op, int timeRefIndex)
         {
-            var menu = new TrackedTextMenu();
+            var menu = new TextMenu();
             menu.labelColor = JUtil.ColorToColorTag(Color.white);
             menu.selectedColor = JUtil.ColorToColorTag(Color.green);
             menu.disabledColor = JUtil.ColorToColorTag(Color.gray);
@@ -951,17 +695,17 @@ namespace JSI
 
             var ts = op.GetTimeSelector();
 
-            AddNumericItem(menu, "At Altitude", ts.CircularizeAltitude,
+            menu.AddMJItem("At Altitude", ts.CircularizeAltitude,
                 1000.0, v => (v / 1000.0).ToString("F1") + " km", null, true, 1.0, false, 0);
             
             // Find ALTITUDE index for this operation's TimeSelector
-            AddMenuItem(menu, "[Create Node]", () => {
+            menu.AddMenuItem("[Create Node]", () => {
                 ts._currentTimeRef = timeRefIndex;
                 MechJebProxy.ExecuteOperation(op, mjCore, vessel);
                 PopMenu();
             });
             
-            AddMenuItem(menu, "[BACK]", () => PopMenu());
+            menu.AddMenuItem("[BACK]", () => PopMenu());
             return menu;
         }
 
@@ -970,7 +714,7 @@ namespace JSI
         /// </summary>
         private TextMenu BuildTimeSelectorLeadTimeMenu(Operation op, int timeRefIndex)
         {
-            var menu = new TrackedTextMenu();
+            var menu = new TextMenu();
             menu.labelColor = JUtil.ColorToColorTag(Color.white);
             menu.selectedColor = JUtil.ColorToColorTag(Color.green);
             menu.disabledColor = JUtil.ColorToColorTag(Color.gray);
@@ -978,17 +722,17 @@ namespace JSI
 
             var ts = op.GetTimeSelector();
 
-            AddNumericItem(menu, "Seconds from now", ts.LeadTime,
+            menu.AddMJItem("Seconds from now", ts.LeadTime,
                 10.0, v => v.ToString("F0") + " s", null, true, 0, false, 0);
             
             // Find X_FROM_NOW index for this operation's TimeSelector
-            AddMenuItem(menu, "[Create Node]", () => {
+            menu.AddMenuItem("[Create Node]", () => {
                 ts._currentTimeRef = timeRefIndex;
                 MechJebProxy.ExecuteOperation(op, mjCore, vessel);
                 PopMenu();
             });
             
-            AddMenuItem(menu, "[BACK]", () => PopMenu());
+            menu.AddMenuItem("[BACK]", () => PopMenu());
             return menu;
         }
 
@@ -1002,34 +746,34 @@ namespace JSI
         private void PopulateChangeApoapsisMenu(TextMenu menu, Operation baseOp)
         {
             var op = baseOp as OperationApoapsis;
-            AddNumericItem(menu, "New Apoapsis", op.NewApA,
+            menu.AddMJItem("New Apoapsis", op.NewApA,
                 1000.0, v => (v / 1000.0).ToString("F1") + " km", null, true, 1.0, false, 0);
         }
 
         private void PopulateChangePeriapsisMenu(TextMenu menu, Operation baseOp)
         {
             var op = baseOp as OperationPeriapsis;
-            AddNumericItem(menu, "New Periapsis", op.NewPeA,
+            menu.AddMJItem("New Periapsis", op.NewPeA,
                 1000.0, v => (v / 1000.0).ToString("F1") + " km", null, true, 1.0, false, 0);
         }
 
         private void PopulateChangeSMAMenu(TextMenu menu, Operation baseOp)
         {
             var op = baseOp as OperationSemiMajor;
-            AddNumericItem(menu, "New Semi-Major Axis", MechJebProxy.OpChangeSemiMajorAxis.NewSma,
+            menu.AddMJItem("New Semi-Major Axis", MechJebProxy.OpChangeSemiMajorAxis.NewSma,
                 1000.0, v => (v / 1000.0).ToString("F1") + " km", null, true, 1.0, false, 0);
         }
 
         private void PopulateChangeInclinationMenu(TextMenu menu, Operation baseOp)
         {
             var op = baseOp as OperationInclination;
-            AddNumericItem(menu, "New Inclination", op.NewInc,
+            menu.AddMJItem("New Inclination", op.NewInc,
                 0.5, v => v.ToString("F1") + "°", null, true, -180, true, 180);
         }
 
         private void PopulateChangeLANMenu(TextMenu menu, Operation baseOp)
         {
-            AddNumericItem(menu, "New LAN", mjCore.Target.targetLongitude.Degrees,
+            menu.AddMJItem("New LAN", mjCore.Target.targetLongitude.Degrees,
                 0.5, v => v.ToString("F1") + "°", null, true, 0, true, 360);
         }
 
@@ -1038,49 +782,44 @@ namespace JSI
             var op = baseOp as OperationGeneric;
 
             // "no insertion burn (impact/flyby)" checkbox - inverted Capture bool
-            AddToggleItem(menu, "no insertion burn (impact/flyby)",
+            menu.AddToggleItem("no insertion burn (impact/flyby)",
                 () => !op.Capture,
                 (val) => op.Capture = !val);
 
             // "Plan insertion burn" checkbox
-            AddToggleItem(menu, "Plan insertion burn", op, MechJebProxy.f_Generic_PlanCapture);
+            menu.AddToggleItem("Plan insertion burn", op, MechJebProxy.f_Generic_PlanCapture);
 
             // "coplanar maneuver" checkbox
-            AddToggleItem(menu, "coplanar maneuver", op, MechJebProxy.f_Generic_Coplanar);
+            menu.AddToggleItem("coplanar maneuver", op, MechJebProxy.f_Generic_Coplanar);
 
             // Rendezvous vs Transfer radio buttons - use isSelected for green highlighting
-            var rendezvousItem = new TextMenu.Item("Rendezvous", (idx, item) => op.Rendezvous = true);
-            menu.Add(rendezvousItem);
-            GetTrackedItems(menu).Add(new TrackedMenuItem { item = rendezvousItem, id = "HohmannRendezvous", isSelected = () => op.Rendezvous });
-            
-            var transferItem = new TextMenu.Item("Transfer", (idx, item) => MechJebProxy.OpGeneric.Rendezvous = false);
-            menu.Add(transferItem);
-            GetTrackedItems(menu).Add(new TrackedMenuItem { item = transferItem, id = "HohmannTransfer", isSelected = () => !op.Rendezvous });
+            menu.AddMenuItem("Rendezvous", () => op.Rendezvous = true, () => op.Rendezvous);
+            menu.AddMenuItem("Transfer", () => op.Rendezvous = false, () => !op.Rendezvous);
 
             // Rendezvous time offset (LagTime in seconds)
-            AddNumericItem(menu, "rendezvous time offset", op.LagTime,
+            menu.AddMJItem("rendezvous time offset", op.LagTime,
                 1.0, v => v.ToString("F0") + " sec", null, false, 0, false, 0);
         }
 
         private void PopulateEllipticizeMenu(TextMenu menu, Operation baseOp)
         {
             var op = baseOp as OperationEllipticize;
-            AddNumericItem(menu, "New periapsis", op.NewPeA,
+            menu.AddMJItem("New periapsis", op.NewPeA,
                 1000.0, v => (v / 1000.0).ToString("F1") + " km", null, true, 1.0, false, 0);
-            AddNumericItem(menu, "New apoapsis", op.NewApA,
+            menu.AddMJItem("New apoapsis", op.NewApA,
                 1000.0, v => (v / 1000.0).ToString("F1") + " km", null, true, 1.0, false, 0);
         }
 
         private void PopulateChangeEccentricityMenu(TextMenu menu, Operation baseOp)
         {
             var op = baseOp as OperationEccentricity;
-            AddNumericItem(menu, "New eccentricity", op.NewEcc,
+            menu.AddMJItem("New eccentricity", op.NewEcc,
                 0.01, v => v.ToString("F3"), null, true, 0, true, 0.99);
         }
 
         private void PopulateChangeSurfaceLongitudeMenu(TextMenu menu, Operation baseOp)
         {
-            AddNumericItem(menu, "Target longitude", mjCore.Target.targetLongitude.Degrees,
+            menu.AddMJItem("Target longitude", mjCore.Target.targetLongitude.Degrees,
                 1.0, v => v.ToString("F1") + "°", null, true, -180, true, 180);
         }
 
@@ -1095,12 +834,12 @@ namespace JSI
             
             if (isCelestialTarget)
             {
-                AddNumericItem(menu, "Target periapsis", op.CourseCorrectFinalPeA,
+                menu.AddMJItem("Target periapsis", op.CourseCorrectFinalPeA,
                     1000.0, v => (v / 1000.0).ToString("F1") + " km", null, true, 0, false, 0);
             }
             else
             {
-                AddNumericItem(menu, "Distance at closest approach", op.InterceptDistance,
+                menu.AddMJItem("Distance at closest approach", op.InterceptDistance,
                     10.0, v => v.ToString("F0") + " m", null, true, 0, false, 0);
             }
         }
@@ -1108,30 +847,30 @@ namespace JSI
         private void PopulateLambertMenu(TextMenu menu, Operation baseOp)
         {
             var op = baseOp as OperationLambert;
-            AddNumericItem(menu, "Intercept after", op.InterceptInterval,
+            menu.AddMJItem("Intercept after", op.InterceptInterval,
                 60.0, v => FormatTime(v), null, true, 60, false, 0);
         }
 
         private void PopulateResonantOrbitMenu(TextMenu menu, Operation baseOp)
         {
             var op = baseOp as OperationResonantOrbit;
-            AddNumericItem(menu, "Resonance numerator", op.ResonanceNumerator,
+            menu.AddMJItem("Resonance numerator", op.ResonanceNumerator,
                 1.0, v => ((int)v).ToString(), null, true, 1, false, 0);
-            AddNumericItem(menu, "Resonance denominator", op.ResonanceDenominator,
+            menu.AddMJItem("Resonance denominator", op.ResonanceDenominator,
                 1.0, v => ((int)v).ToString(), null, true, 1, false, 0);
         }
 
         private void PopulatedMoonReturnMenu(TextMenu menu, Operation baseOp)
         {
             var op = baseOp as OperationMoonReturn;
-            AddNumericItem(menu, "Return altitude", MechJebProxy.OpMoonReturn.MoonReturnAltitude,
+            menu.AddMJItem("Return altitude", MechJebProxy.OpMoonReturn.MoonReturnAltitude,
                 10.0, v => (v / 1000.0).ToString("F0") + " km", null, true, 10, false, 0);
         }
 
         private void PopulateInterplanetaryTransferMenu(TextMenu menu, Operation baseOp)
         {
             var op = baseOp as OperationInterplanetaryTransfer;
-            AddToggleItem(menu, "Wait for optimal phase angle", op, MechJebProxy.f_InterplanetaryTransfer_WaitForPhaseAngle);
+            menu.AddToggleItem("Wait for optimal phase angle", op, MechJebProxy.f_InterplanetaryTransfer_WaitForPhaseAngle);
         }
 
         private TextMenu BuildAdvancedTransferMenu()
@@ -1140,78 +879,35 @@ namespace JSI
             var menu = CreateOperationMenu(op);
 
             // Mode selection header
-            AddMenuItem(menu, "--- Porkchop selection ---", null);
+            menu.AddMenuItem("--- Porkchop selection ---", null);
 
             // Status display - shows computation progress/ready status
-            var statusItem = new TextMenu.Item("Status: ---", null);
-            menu.Add(statusItem);
-            GetTrackedItems(menu).Add(new TrackedMenuItem
-            {
-                item = statusItem,
-                id = "AdvancedTransferStatus",
-                isEnabled = null,
-                getLabel = () => GetAdvancedTransferStatusText()
-            });
-
-            // ΔV display
-            var dvItem = new TextMenu.Item("ΔV: ---", null);
-            menu.Add(dvItem);
-            GetTrackedItems(menu).Add(new TrackedMenuItem
-            {
-                item = dvItem,
-                id = "AdvancedTransferDV",
-                isEnabled = null,
-                getLabel = () => {
-                    double dv, dep, dur;
-                    if (MechJebProxy.GetAdvancedTransferSelection(op, out dep, out dur, out dv) && dv > 0)
-                        return "ΔV: " + dv.ToString("F1") + " m/s";
-                    return "ΔV: ---";
-                }
+            menu.AddMenuItem(() => GetAdvancedTransferStatusText());
+            menu.AddMenuItem(() => {
+                if (MechJebProxy.GetAdvancedTransferSelection(op, out double dep, out double dur, out double dv) && dv > 0)
+                    return "ΔV: " + dv.ToString("F1") + " m/s";
+                return "ΔV: ---";
             });
 
             // Include capture burn checkbox - wraps operation field
-            AddToggleItem(menu, "Include capture burn", op, MechJebProxy.f_AdvancedTransfer_IncludeCaptureBurn);
+            menu.AddToggleItem("Include capture burn", op, MechJebProxy.f_AdvancedTransfer_IncludeCaptureBurn);
 
             // Periapsis input - wraps periapsisHeight field (in km)
-            AddNumericItem(menu, "Periapsis", op.periapsisHeight,
+            menu.AddMJItem("Periapsis", op.periapsisHeight,
                 10.0, v => v.ToString("F0") + " km", null, true, 10.0, false, 0);
 
             // Selection mode - Lowest ΔV vs ASAP - use isSelected for green highlighting
-            var lowestDVItem = new TextMenu.Item("Lowest ΔV", (idx, item) => { advancedTransferSelectLowestDV = true; SelectAdvancedTransferLowestDV(); });
-            menu.Add(lowestDVItem);
-            GetTrackedItems(menu).Add(new TrackedMenuItem { item = lowestDVItem, id = "AdvTransferLowestDV", isSelected = () => advancedTransferSelectLowestDV });
-            
-            var asapItem = new TextMenu.Item("ASAP", (idx, item) => { advancedTransferSelectLowestDV = false; SelectAdvancedTransferASAP(); });
-            menu.Add(asapItem);
-            GetTrackedItems(menu).Add(new TrackedMenuItem { item = asapItem, id = "AdvTransferASAP", isSelected = () => !advancedTransferSelectLowestDV });
+            menu.AddMenuItem("Lowest ΔV", SelectAdvancedTransferLowestDV, null, () => advancedTransferSelectLowestDV);
+            menu.AddMenuItem("ASAP", SelectAdvancedTransferASAP, null, () => !advancedTransferSelectLowestDV);
 
-            // Departure info
-            var departureItem = new TextMenu.Item("Departure: ---", null);
-            menu.Add(departureItem);
-            GetTrackedItems(menu).Add(new TrackedMenuItem
-            {
-                item = departureItem,
-                id = "AdvancedTransferDeparture",
-                isEnabled = null,
-                getLabel = () => "Departure in " + GetAdvancedTransferDepartureText()
-            });
+            menu.AddMenuItem(() => "Departure in " + GetAdvancedTransferDepartureText());
+            menu.AddMenuItem(() => "Transit duration " + GetAdvancedTransferTransitText());
 
-            // Transit duration
-            var transitItem = new TextMenu.Item("Transit: ---", null);
-            menu.Add(transitItem);
-            GetTrackedItems(menu).Add(new TrackedMenuItem
-            {
-                item = transitItem,
-                id = "AdvancedTransferTransit",
-                isEnabled = null,
-                getLabel = () => "Transit duration " + GetAdvancedTransferTransitText()
-            });
-
-            AddMenuItem(menu, "------", null);
-            AddMenuItem(menu, "[Start/Refresh Compute]", () => StartAdvancedTransferCompute());
-            AddMenuItem(menu, "[Create node]", () => CreateAdvancedTransferNode());
-            AddMenuItem(menu, "[Create and execute]", () => CreateAndExecuteAdvancedTransfer());
-            AddMenuItem(menu, "[BACK]", () => PopMenu());
+            menu.AddMenuItem("------", null);
+            menu.AddMenuItem("[Start/Refresh Compute]", () => StartAdvancedTransferCompute());
+            menu.AddMenuItem("[Create node]", () => CreateAdvancedTransferNode());
+            menu.AddMenuItem("[Create and execute]", () => CreateAndExecuteAdvancedTransfer());
+            menu.AddMenuItem("[BACK]", () => PopMenu());
 
             return menu;
         }
@@ -1274,6 +970,7 @@ namespace JSI
 
         private void SelectAdvancedTransferLowestDV()
         {
+            advancedTransferSelectLowestDV = true;
             var op = MechJebProxy.OpAdvancedTransfer;
             if (op == null) return;
             MechJebProxy.SelectAdvancedTransferLowestDV(op);
@@ -1281,6 +978,7 @@ namespace JSI
 
         private void SelectAdvancedTransferASAP()
         {
+            advancedTransferSelectLowestDV = false;
             var op = MechJebProxy.OpAdvancedTransfer;
             if (op == null) return;
             MechJebProxy.SelectAdvancedTransferASAP(op);
@@ -1319,29 +1017,29 @@ namespace JSI
         #region Node Editor Menu
         private TextMenu BuildNodeEditorMenu()
         {
-            var menu = new TrackedTextMenu();
+            var menu = new TextMenu();
             menu.labelColor = JUtil.ColorToColorTag(Color.white);
             menu.selectedColor = JUtil.ColorToColorTag(Color.green);
             menu.disabledColor = JUtil.ColorToColorTag(Color.gray);
 
-            AddMenuItem(menu, "-- ADJUST NODE --", null);
-            AddMenuItem(menu, "Prograde +1 m/s", () => AdjustNode(Vector3d.forward, 1));
-            AddMenuItem(menu, "Prograde -1 m/s", () => AdjustNode(Vector3d.forward, -1));
-            AddMenuItem(menu, "Prograde +10 m/s", () => AdjustNode(Vector3d.forward, 10));
-            AddMenuItem(menu, "Prograde -10 m/s", () => AdjustNode(Vector3d.forward, -10));
-            AddMenuItem(menu, "------", null);
-            AddMenuItem(menu, "Normal +1 m/s", () => AdjustNode(Vector3d.up, 1));
-            AddMenuItem(menu, "Normal -1 m/s", () => AdjustNode(Vector3d.up, -1));
-            AddMenuItem(menu, "Normal +10 m/s", () => AdjustNode(Vector3d.up, 10));
-            AddMenuItem(menu, "Normal -10 m/s", () => AdjustNode(Vector3d.up, -10));
-            AddMenuItem(menu, "------", null);
-            AddMenuItem(menu, "Radial +1 m/s", () => AdjustNode(Vector3d.right, 1));
-            AddMenuItem(menu, "Radial -1 m/s", () => AdjustNode(Vector3d.right, -1));
-            AddMenuItem(menu, "Radial +10 m/s", () => AdjustNode(Vector3d.right, 10));
-            AddMenuItem(menu, "Radial -10 m/s", () => AdjustNode(Vector3d.right, -10));
-            AddMenuItem(menu, "------", null);
-            AddMenuItem(menu, "Delete Node", () => DeleteCurrentNode());
-            AddMenuItem(menu, "[BACK]", () => PopMenu());
+            menu.AddMenuItem("-- ADJUST NODE --", null);
+            menu.AddMenuItem("Prograde +1 m/s", () => AdjustNode(Vector3d.forward, 1));
+            menu.AddMenuItem("Prograde -1 m/s", () => AdjustNode(Vector3d.forward, -1));
+            menu.AddMenuItem("Prograde +10 m/s", () => AdjustNode(Vector3d.forward, 10));
+            menu.AddMenuItem("Prograde -10 m/s", () => AdjustNode(Vector3d.forward, -10));
+            menu.AddMenuItem("------", null);
+            menu.AddMenuItem("Normal +1 m/s", () => AdjustNode(Vector3d.up, 1));
+            menu.AddMenuItem("Normal -1 m/s", () => AdjustNode(Vector3d.up, -1));
+            menu.AddMenuItem("Normal +10 m/s", () => AdjustNode(Vector3d.up, 10));
+            menu.AddMenuItem("Normal -10 m/s", () => AdjustNode(Vector3d.up, -10));
+            menu.AddMenuItem("------", null);
+            menu.AddMenuItem("Radial +1 m/s", () => AdjustNode(Vector3d.right, 1));
+            menu.AddMenuItem("Radial -1 m/s", () => AdjustNode(Vector3d.right, -1));
+            menu.AddMenuItem("Radial +10 m/s", () => AdjustNode(Vector3d.right, 10));
+            menu.AddMenuItem("Radial -10 m/s", () => AdjustNode(Vector3d.right, -10));
+            menu.AddMenuItem("------", null);
+            menu.AddMenuItem("Delete Node", () => DeleteCurrentNode());
+            menu.AddMenuItem("[BACK]", () => PopMenu());
 
             return menu;
         }
@@ -1385,43 +1083,35 @@ namespace JSI
         #region Rendezvous Menu
         private TextMenu BuildRendezvousMenu()
         {
-            var menu = new TrackedTextMenu();
+            var menu = new TextMenu();
             menu.labelColor = JUtil.ColorToColorTag(Color.white);
             menu.selectedColor = JUtil.ColorToColorTag(Color.green);
             menu.disabledColor = JUtil.ColorToColorTag(Color.gray);
 
-            AddToggleItem(menu, "ENGAGE Rendezvous Autopilot",
+            menu.AddToggleItem("ENGAGE Rendezvous Autopilot",
                 () => mjRendezvousAutopilot?.Enabled == true,
                 (val) => MechJebProxy.SetRendezvousAutopilotEngaged(mjCore, val));
 
-            AddMenuItem(menu, "------", null);
+            menu.AddMenuItem("------", null);
 
-            AddNumericItem(menu, "Desired Distance",
+            menu.AddMJItem("Desired Distance",
                 mjRendezvousAutopilot.desiredDistance,
                 10.0, v => v.ToString("F0") + " m", null, true, 0, false, 0);
 
-            AddNumericItem(menu, "Max Phasing Orbits",
+            menu.AddMJItem("Max Phasing Orbits",
                 mjRendezvousAutopilot.maxPhasingOrbits,
                 1.0, v => v.ToString("F0"), null, true, 0, false, 0);
-            AddNumericItem(menu, "Max Closing Speed",
+            menu.AddMJItem("Max Closing Speed",
                 mjRendezvousAutopilot.maxClosingSpeed,
                 1.0, v => v.ToString("F1") + " m/s", null, true, 0, false, 0);
 
-            AddMenuItem(menu, "------", null);
+            menu.AddMenuItem("------", null);
 
             // Info display
-            AddMenuItem(menu, "-- RENDEZVOUS INFO --", null);
-            var rendezvousStatus = new TextMenu.Item("Status: ---", null);
-            menu.Add(rendezvousStatus);
-            GetTrackedItems(menu).Add(new TrackedMenuItem
-            {
-                item = rendezvousStatus,
-                id = "RendezvousStatus",
-                isEnabled = null,
-                getLabel = () => "Status: " + mjRendezvousAutopilot?.status ?? ""
-            });
+            menu.AddMenuItem("-- RENDEZVOUS INFO --", null);
+            menu.AddMenuItem(() => "Status: " + mjRendezvousAutopilot?.status ?? "");
 
-            AddMenuItem(menu, "[BACK]", () => PopMenu());
+            menu.AddMenuItem("[BACK]", () => PopMenu());
 
             return menu;
         }
@@ -1430,54 +1120,45 @@ namespace JSI
         #region Docking Menu
         private TextMenu BuildDockingMenu()
         {
-            var menu = new TrackedTextMenu();
+            var menu = new TextMenu();
             menu.labelColor = JUtil.ColorToColorTag(Color.white);
             menu.selectedColor = JUtil.ColorToColorTag(Color.green);
             menu.disabledColor = JUtil.ColorToColorTag(Color.gray);
 
-            AddToggleItem(menu, "ENGAGE Docking Autopilot",
+            menu.AddToggleItem("ENGAGE Docking Autopilot",
                 () => mjDockingAutoPilot?.Enabled == true,
                 (val) => mjDockingAutoPilot.Enabled = val);
 
-            AddMenuItem(menu, "------", null);
+            menu.AddMenuItem("------", null);
 
-            AddNumericItem(menu, "Speed Limit",
+            menu.AddMJItem("Speed Limit",
                 mjDockingAutoPilot.speedLimit,
                 0.1, v => v.ToString("F1") + " m/s", null, true, 0, false, 0);
 
-            AddToggleItem(menu, "Force Roll", mjDockingAutoPilot, MechJebProxy.f_Docking_ForceRoll);
-            AddNumericItem(menu, "Roll",
+            menu.AddToggleItem("Force Roll", mjDockingAutoPilot, MechJebProxy.f_Docking_ForceRoll);
+            menu.AddMJItem("Roll",
                 mjDockingAutoPilot.rol,
                 1.0, v => v.ToString("F1") + "°", null, true, -180, true, 180);
 
-            AddToggleItem(menu, "Override Safe Distance", mjDockingAutoPilot, MechJebProxy.f_Docking_OverrideSafeDistance);
-            AddNumericItem(menu, "Safe Distance",
+            menu.AddToggleItem("Override Safe Distance", mjDockingAutoPilot, MechJebProxy.f_Docking_OverrideSafeDistance);
+            menu.AddMJItem("Safe Distance",
                 mjDockingAutoPilot.overridenSafeDistance,
                 0.1, v => v.ToString("F1") + " m", () => mjDockingAutoPilot.overrideSafeDistance, true, 0, false, 0);
 
-            AddToggleItem(menu, "Override Target Size", mjDockingAutoPilot, MechJebProxy.f_Docking_OverrideTargetSize);
-            AddNumericItem(menu, "Target Size",
+            menu.AddToggleItem("Override Target Size", mjDockingAutoPilot, MechJebProxy.f_Docking_OverrideTargetSize);
+            menu.AddMJItem("Target Size",
                 mjDockingAutoPilot.overridenTargetSize,
                 0.1, v => v.ToString("F1") + " m", () => mjDockingAutoPilot.overrideTargetSize, true, 0, false, 0);
 
-            AddToggleItem(menu, "Draw Bounding Box",
+            menu.AddToggleItem("Draw Bounding Box",
                 mjDockingAutoPilot, MechJebProxy.f_Docking_DrawBoundingBox);
 
-            AddMenuItem(menu, "------", null);
+            menu.AddMenuItem("------", null);
 
             // Status
-            AddMenuItem(menu, "Status:", null);
-            var dockingStatus = new TextMenu.Item("  ---", null);
-            menu.Add(dockingStatus);
-            GetTrackedItems(menu).Add(new TrackedMenuItem
-            {
-                item = dockingStatus,
-                id = "DockingStatus",
-                isEnabled = null,
-                getLabel = () => "  " + mjDockingAutoPilot?.status ?? ""
-            });
-
-            AddMenuItem(menu, "[BACK]", () => PopMenu());
+            menu.AddMenuItem("Status:", null);
+            menu.AddMenuItem(() => "  " + mjDockingAutoPilot?.status ?? "");
+            menu.AddMenuItem("[BACK]", () => PopMenu());
 
             return menu;
         }
@@ -1486,30 +1167,30 @@ namespace JSI
         #region Translatron Menu
         private TextMenu BuildTranslatronMenu()
         {
-            var menu = new TrackedTextMenu();
+            var menu = new TextMenu();
             menu.labelColor = JUtil.ColorToColorTag(Color.white);
             menu.selectedColor = JUtil.ColorToColorTag(Color.green);
             menu.disabledColor = JUtil.ColorToColorTag(Color.gray);
 
-            AddMenuItem(menu, "-- MODE --", null);
-            AddMenuItem(menu, "OFF", () => mjTranslatron.SetMode(MechJebModuleThrustController.TMode.OFF));
-            AddMenuItem(menu, "Keep Orbital Vel", () => mjTranslatron.SetMode(MechJebModuleThrustController.TMode.KEEP_ORBITAL));
-            AddMenuItem(menu, "Keep Surface Vel", () => mjTranslatron.SetMode(MechJebModuleThrustController.TMode.KEEP_SURFACE));
-            AddMenuItem(menu, "Keep Vertical Vel", () => mjTranslatron.SetMode(MechJebModuleThrustController.TMode.KEEP_VERTICAL));
-            AddMenuItem(menu, "Direct", () => mjTranslatron.SetMode(MechJebModuleThrustController.TMode.DIRECT));
+            menu.AddMenuItem("-- MODE --", null);
+            menu.AddMenuItem("OFF", () => mjTranslatron.SetMode(MechJebModuleThrustController.TMode.OFF));
+            menu.AddMenuItem("Keep Orbital Vel", () => mjTranslatron.SetMode(MechJebModuleThrustController.TMode.KEEP_ORBITAL));
+            menu.AddMenuItem("Keep Surface Vel", () => mjTranslatron.SetMode(MechJebModuleThrustController.TMode.KEEP_SURFACE));
+            menu.AddMenuItem("Keep Vertical Vel", () => mjTranslatron.SetMode(MechJebModuleThrustController.TMode.KEEP_VERTICAL));
+            menu.AddMenuItem("Direct", () => mjTranslatron.SetMode(MechJebModuleThrustController.TMode.DIRECT));
 
-            AddMenuItem(menu, "------", null);
+            menu.AddMenuItem("------", null);
 
-            AddNumericItem(menu, "Target Speed", mjTranslatron.trans_spd,
+            menu.AddMJItem("Target Speed", mjTranslatron.trans_spd,
                 0.1, v => v.ToString("F1") + " m/s", null, true, 0, false, 0);
 
-            AddToggleItem(menu, "Kill Horizontal", mjCore.Thrust, MechJebProxy.f_Thrust_TransKillH);
+            menu.AddToggleItem("Kill Horizontal", mjCore.Thrust, MechJebProxy.f_Thrust_TransKillH);
 
-            AddMenuItem(menu, "------", null);
+            menu.AddMenuItem("------", null);
 
-            AddMenuItem(menu, "!! PANIC !!", () => mjTranslatron?.PanicSwitch());
+            menu.AddMenuItem("!! PANIC !!", () => mjTranslatron?.PanicSwitch());
 
-            AddMenuItem(menu, "[BACK]", () => PopMenu());
+            menu.AddMenuItem("[BACK]", () => PopMenu());
 
             return menu;
         }
@@ -1518,52 +1199,52 @@ namespace JSI
         #region Rover Menu
         private TextMenu BuildRoverMenu()
         {
-            var menu = new TrackedTextMenu();
+            var menu = new TextMenu();
             menu.labelColor = JUtil.ColorToColorTag(Color.white);
             menu.selectedColor = JUtil.ColorToColorTag(Color.green);
             menu.disabledColor = JUtil.ColorToColorTag(Color.gray);
 
-            AddMenuItem(menu, "Drive to Target", () => DriveToTarget(),
+            menu.AddMenuItem("Drive to Target", () => DriveToTarget(),
                 () => mjCore.Target.PositionTargetExists);
-            AddMenuItem(menu, "STOP", () => StopRover());
+            menu.AddMenuItem("STOP", () => StopRover());
 
-            AddMenuItem(menu, "------", null);
+            menu.AddMenuItem("------", null);
 
-            AddToggleItem(menu, "Control Heading", mjCore.Rover, MechJebProxy.f_Rover_ControlHeading);
-            AddNumericItem(menu, "Heading", mjCore.Rover.heading,
+            menu.AddToggleItem("Control Heading", mjCore.Rover, MechJebProxy.f_Rover_ControlHeading);
+            menu.AddMJItem("Heading", mjCore.Rover.heading,
                 1.0, v => v.ToString("F1") + "°", null, true, 0, true, 360);
 
-            AddToggleItem(menu, "Control Speed", mjCore.Rover, MechJebProxy.f_Rover_ControlSpeed);
-            AddNumericItem(menu, "Speed", mjCore.Rover.speed,
+            menu.AddToggleItem("Control Speed", mjCore.Rover, MechJebProxy.f_Rover_ControlSpeed);
+            menu.AddMJItem("Speed", mjCore.Rover.speed,
                 0.5, v => v.ToString("F1") + " m/s", null, true, 0, false, 0);
 
-            AddMenuItem(menu, "------", null);
+            menu.AddMenuItem("------", null);
 
-            AddToggleItem(menu, "Stability Control", mjCore.Rover, MechJebProxy.f_Rover_StabilityControl);
-            AddToggleItem(menu, "Brake on Eject", mjCore.Rover, MechJebProxy.f_Rover_BrakeOnEject);
-            AddToggleItem(menu, "Brake on Energy Depletion", mjCore.Rover, MechJebProxy.f_Rover_BrakeOnEnergyDepletion);
-            AddToggleItem(menu, "Warp to Daylight", mjCore.Rover, MechJebProxy.f_Rover_WarpToDaylight);
+            menu.AddToggleItem("Stability Control", mjCore.Rover, MechJebProxy.f_Rover_StabilityControl);
+            menu.AddToggleItem("Brake on Eject", mjCore.Rover, MechJebProxy.f_Rover_BrakeOnEject);
+            menu.AddToggleItem("Brake on Energy Depletion", mjCore.Rover, MechJebProxy.f_Rover_BrakeOnEnergyDepletion);
+            menu.AddToggleItem("Warp to Daylight", mjCore.Rover, MechJebProxy.f_Rover_WarpToDaylight);
 
-            AddMenuItem(menu, "------", null);
+            menu.AddMenuItem("------", null);
 
-            AddMenuItem(menu, "Waypoints", () => PushMenu(BuildRoverWaypointsMenu()));
+            menu.AddMenuItem("Waypoints", () => PushMenu(BuildRoverWaypointsMenu()));
 
-            AddMenuItem(menu, "[BACK]", () => PopMenu());
+            menu.AddMenuItem("[BACK]", () => PopMenu());
 
             return menu;
         }
 
         private TextMenu BuildRoverWaypointsMenu()
         {
-            var menu = new TrackedTextMenu();
+            var menu = new TextMenu();
             menu.labelColor = JUtil.ColorToColorTag(Color.white);
             menu.selectedColor = JUtil.ColorToColorTag(Color.green);
 
-            AddMenuItem(menu, "Add Waypoint", () => AddRoverWaypoint());
-            AddMenuItem(menu, "Clear All Waypoints", () => ClearRoverWaypoints());
+            menu.AddMenuItem("Add Waypoint", () => AddRoverWaypoint());
+            menu.AddMenuItem("Clear All Waypoints", () => ClearRoverWaypoints());
             // Waypoint list would go here
 
-            AddMenuItem(menu, "[BACK]", () => PopMenu());
+            menu.AddMenuItem("[BACK]", () => PopMenu());
 
             return menu;
         }
@@ -1701,18 +1382,18 @@ namespace JSI
 
         private TextMenu BuildAircraftMenu()
         {
-            var menu = new TrackedTextMenu();
+            var menu = new TextMenu();
             menu.labelColor = JUtil.ColorToColorTag(Color.white);
             menu.selectedColor = JUtil.ColorToColorTag(Color.green);
             menu.disabledColor = JUtil.ColorToColorTag(Color.gray);
 
-            AddMenuItem(menu,
+            menu.AddMenuItem(
                 () => IsAircraftAutopilotEngaged() ? "Disengage Autopilot" : "Engage Autopilot",
                 () => SetAircraftAutopilotEngaged(!IsAircraftAutopilotEngaged()));
-            AddMenuItem(menu, "------", null);
+            menu.AddMenuItem("------", null);
 
-            AddMenuItem(menu, "-- ALTITUDE --", null);
-            AddToggleItem(menu, "Altitude Hold",
+            menu.AddMenuItem("-- ALTITUDE --", null);
+            menu.AddToggleItem("Altitude Hold",
                 () => mjCore.Airplane.AltitudeHoldEnabled,
                 (val) =>
                 {
@@ -1727,9 +1408,9 @@ namespace JSI
                         mjCore.Airplane.DisableAltitudeHold();
                     }
                 });
-            AddNumericItem(menu, "Target Altitude", GetAircraftAltitudeTarget, SetAircraftAltitudeTarget,
+            menu.AddNumericItem("Target Altitude", GetAircraftAltitudeTarget, SetAircraftAltitudeTarget,
                 50.0, v => v.ToString("F0") + " m", null, true, 0, false, 0);
-            AddToggleItem(menu, "Vertical Speed Hold",
+            menu.AddToggleItem("Vertical Speed Hold",
                 () => mjCore.Airplane.VertSpeedHoldEnabled,
                 (val) =>
                 {
@@ -1744,13 +1425,13 @@ namespace JSI
                         mjCore.Airplane.DisableVertSpeedHold();
                     }
                 });
-            AddNumericItem(menu, "Target Vert Speed", GetAircraftVertSpeedTarget, SetAircraftVertSpeedTarget,
+            menu.AddNumericItem("Target Vert Speed", GetAircraftVertSpeedTarget, SetAircraftVertSpeedTarget,
                 1.0, v => v.ToString("F1") + " m/s", null, false, 0, false, 0);
 
-            AddMenuItem(menu, "------", null);
+            menu.AddMenuItem("------", null);
 
-            AddMenuItem(menu, "-- HEADING --", null);
-            AddToggleItem(menu, "Heading Hold",
+            menu.AddMenuItem("-- HEADING --", null);
+            menu.AddToggleItem("Heading Hold",
                 () => mjCore.Airplane.HeadingHoldEnabled,
                 (val) =>
                 {
@@ -1765,18 +1446,18 @@ namespace JSI
                         mjCore.Airplane.DisableHeadingHold();
                     }
                 });
-            AddNumericItem(menu, "Target Heading", GetAircraftHeadingTarget, SetAircraftHeadingTarget,
+            menu.AddNumericItem("Target Heading", GetAircraftHeadingTarget, SetAircraftHeadingTarget,
                 1.0, v => v.ToString("F1") + "°", null, true, 0, true, 360);
-            AddToggleItem(menu, "Roll Hold",
+            menu.AddToggleItem("Roll Hold",
                 () => mjCore.Airplane.RollHoldEnabled,
                 (val) => { if (val) { SyncAirplaneGuidanceTargetsToAutopilot(); mjCore.Airplane.RollHoldEnabled = true; } else mjCore.Airplane.RollHoldEnabled = false; });
-            AddNumericItem(menu, "Target Roll", GetAircraftRollTarget, SetAircraftRollTarget,
+            menu.AddNumericItem("Target Roll", GetAircraftRollTarget, SetAircraftRollTarget,
                 1.0, v => v.ToString("F1") + "°", null, true, -180, true, 180);
 
-            AddMenuItem(menu, "------", null);
+            menu.AddMenuItem("------", null);
 
-            AddMenuItem(menu, "-- SPEED --", null);
-            AddToggleItem(menu, "Speed Hold",
+            menu.AddMenuItem("-- SPEED --", null);
+            menu.AddToggleItem("Speed Hold",
                 () => mjCore.Airplane.SpeedHoldEnabled,
                 (val) =>
                 {
@@ -1791,10 +1472,10 @@ namespace JSI
                         mjCore.Airplane.DisableSpeedHold();
                     }
                 });
-            AddNumericItem(menu, "Target Speed", GetAircraftSpeedTarget, SetAircraftSpeedTarget,
+            menu.AddNumericItem("Target Speed", GetAircraftSpeedTarget, SetAircraftSpeedTarget,
                 1.0, v => v.ToString("F1") + " m/s", null, true, 0, false, 0);
 
-            AddMenuItem(menu, "[BACK]", () => PopMenu());
+            menu.AddMenuItem("[BACK]", () => PopMenu());
 
             return menu;
         }
@@ -1803,25 +1484,25 @@ namespace JSI
         #region Spaceplane Menu
         private TextMenu BuildSpaceplaneMenu()
         {
-            var menu = new TrackedTextMenu();
+            var menu = new TextMenu();
             menu.labelColor = JUtil.ColorToColorTag(Color.white);
             menu.selectedColor = JUtil.ColorToColorTag(Color.green);
             menu.disabledColor = JUtil.ColorToColorTag(Color.gray);
 
-            AddMenuItem(menu, "Autoland", () => mjSpacePlaneAutopilot.Autoland(null));
-            AddMenuItem(menu, "Hold Heading & Altitude", () => { var ap = mjSpacePlaneAutopilot?.Autopilot; if (ap != null) { ap.HeadingHoldEnabled = true; ap.AltitudeHoldEnabled = true; } });
-            AddMenuItem(menu, "Autopilot OFF", mjSpacePlaneAutopilot.AutopilotOff);
+            menu.AddMenuItem("Autoland", () => mjSpacePlaneAutopilot.Autoland(null));
+            menu.AddMenuItem("Hold Heading & Altitude", () => { var ap = mjSpacePlaneAutopilot?.Autopilot; if (ap != null) { ap.HeadingHoldEnabled = true; ap.AltitudeHoldEnabled = true; } });
+            menu.AddMenuItem("Autopilot OFF", mjSpacePlaneAutopilot.AutopilotOff);
 
-            AddMenuItem(menu, "------", null);
+            menu.AddMenuItem("------", null);
 
-            AddNumericItem(menu, "Glideslope", mjSpacePlaneAutopilot.glideslope,
+            menu.AddMJItem("Glideslope", mjSpacePlaneAutopilot.glideslope,
                 0.1, v => v.ToString("F1") + "°", null, true, 0, true, 30);
-            AddNumericItem(menu, "Approach Speed", mjSpacePlaneAutopilot.approachSpeed,
+            menu.AddMJItem("Approach Speed", mjSpacePlaneAutopilot.approachSpeed,
                 1.0, v => v.ToString("F1") + " m/s", null, true, 0, false, 0);
-            AddNumericItem(menu, "Touchdown Speed", mjSpacePlaneAutopilot.touchdownSpeed,
+            menu.AddMJItem("Touchdown Speed", mjSpacePlaneAutopilot.touchdownSpeed,
                 1.0, v => v.ToString("F1") + " m/s", null, true, 0, false, 0);
 
-            AddMenuItem(menu, "[BACK]", () => PopMenu());
+            menu.AddMenuItem("[BACK]", () => PopMenu());
 
             return menu;
         }
@@ -1831,111 +1512,78 @@ namespace JSI
         #region Utilities Menu
         private TextMenu BuildUtilitiesMenu()
         {
-            var menu = new TrackedTextMenu();
+            var menu = new TextMenu();
             menu.labelColor = JUtil.ColorToColorTag(Color.white);
             menu.selectedColor = JUtil.ColorToColorTag(Color.green);
             menu.disabledColor = JUtil.ColorToColorTag(Color.gray);
 
-            AddMenuItem(menu, "Stage Once", () => mjCore.Staging.AutostageOnce(null));
-            AddMenuItem(menu, "Autostage Options", () => PushMenu(BuildAutostageOptionsMenu()));
+            menu.AddMenuItem("Stage Once", () => mjCore.Staging.AutostageOnce(null));
+            menu.AddMenuItem("Autostage Options", () => PushMenu(BuildAutostageOptionsMenu()));
 
-            AddMenuItem(menu, "------", null);
+            menu.AddMenuItem("------", null);
 
             // Delta-V info
-            AddMenuItem(menu, "-- DELTA-V INFO --", null);
-            var stageVacItem = new TextMenu.Item("Stage dV (Vac):", null);
-            var totalVacItem = new TextMenu.Item("Total dV (Vac):", null);
-            var stageAtmItem = new TextMenu.Item("Stage dV (Atm):", null);
-            var totalAtmItem = new TextMenu.Item("Total dV (Atm):", null);
-            menu.Add(stageVacItem);
-            menu.Add(totalVacItem);
-            menu.Add(stageAtmItem);
-            menu.Add(totalAtmItem);
+            menu.AddMenuItem("-- DELTA-V INFO --", null);
+            menu.AddMenuItem(() => "Stage dV (Vac): " + GetStageDeltaVText(mjCore, true));
+            menu.AddMenuItem(() => "Total dV (Vac): " + FormatDeltaV(MechJebProxy.GetTotalVacuumDeltaV(mjCore)));
+            menu.AddMenuItem(() => "Stage dV (Atm): " + GetStageDeltaVText(mjCore, false));
+            menu.AddMenuItem(() => "Total dV (Atm): " + FormatDeltaV(MechJebProxy.GetTotalAtmoDeltaV(mjCore)));
 
-            GetTrackedItems(menu).Add(new TrackedMenuItem
-            {
-                item = stageVacItem,
-                id = "StageDVVac",
-                isEnabled = null,
-                getLabel = () => "Stage dV (Vac): " + GetStageDeltaVText(mjCore, true)
-            });
-            GetTrackedItems(menu).Add(new TrackedMenuItem
-            {
-                item = totalVacItem,
-                id = "TotalDVVac",
-                isEnabled = null,
-                getLabel = () => "Total dV (Vac): " + FormatDeltaV(MechJebProxy.GetTotalVacuumDeltaV(mjCore))
-            });
-            GetTrackedItems(menu).Add(new TrackedMenuItem
-            {
-                item = stageAtmItem,
-                id = "StageDVAtm",
-                isEnabled = null,
-                getLabel = () => "Stage dV (Atm): " + GetStageDeltaVText(mjCore, false)
-            });
-            GetTrackedItems(menu).Add(new TrackedMenuItem
-            {
-                item = totalAtmItem,
-                id = "TotalDVAtm",
-                isEnabled = null,
-                getLabel = () => "Total dV (Atm): " + FormatDeltaV(MechJebProxy.GetTotalAtmoDeltaV(mjCore))
-            });
+            menu.AddMenuItem("------", null);
 
-            AddMenuItem(menu, "------", null);
+            menu.AddMenuItem("Warp Helper", () => PushMenu(BuildWarpHelperMenu()));
 
-            AddMenuItem(menu, "Warp Helper", () => PushMenu(BuildWarpHelperMenu()));
-
-            AddMenuItem(menu, "[BACK]", () => PopMenu());
+            menu.AddMenuItem("[BACK]", () => PopMenu());
 
             return menu;
         }
 
         private TextMenu BuildAutostageOptionsMenu()
         {
-            var menu = new TrackedTextMenu();
+            var menu = new TextMenu();
             menu.labelColor = JUtil.ColorToColorTag(Color.white);
             menu.selectedColor = JUtil.ColorToColorTag(Color.green);
 
-            AddNumericItem(menu, "Pre-Delay", mjCore.Staging.AutostagePreDelay,
+            menu.AddMJItem("Pre-Delay", mjCore.Staging.AutostagePreDelay,
                 0.1, v => v.ToString("F1") + " s", null, true, 0, false, 0);
-            AddNumericItem(menu, "Post-Delay", mjCore.Staging.AutostagePostDelay,
+            menu.AddMJItem("Post-Delay", mjCore.Staging.AutostagePostDelay,
                 0.1, v => v.ToString("F1") + " s", null, true, 0, false, 0);
-            AddNumericItem(menu, "Clamp Thrust %", mjCore.Staging.ClampAutoStageThrustPct,
+            menu.AddMJItem("Clamp Thrust %", mjCore.Staging.ClampAutoStageThrustPct,
                 1.0, v => v.ToString("F0") + "%", null, true, 0, true, 100);
 
-            AddMenuItem(menu, "------", null);
+            menu.AddMenuItem("------", null);
 
-            AddNumericItem(menu, "Fairing Max Flux", mjCore.Staging.FairingMaxAerothermalFlux,
+            menu.AddMJItem("Fairing Max Flux", mjCore.Staging.FairingMaxAerothermalFlux,
                 1000.0, v => v.ToString("F0"), null, true, 0, false, 0);
-            AddNumericItem(menu, "Fairing Max Q", mjCore.Staging.FairingMaxDynamicPressure,
+            menu.AddMJItem("Fairing Max Q", mjCore.Staging.FairingMaxDynamicPressure,
                 1000.0, v => v.ToString("F0") + " Pa", null, true, 0, false, 0);
-            AddNumericItem(menu, "Fairing Min Alt", mjCore.Staging.FairingMinAltitude,
+            menu.AddMJItem("Fairing Min Alt", mjCore.Staging.FairingMinAltitude,
                 1000.0, v => (v / 1000.0).ToString("F1") + " km", null, true, 0, false, 0);
 
-            AddMenuItem(menu, "------", null);
+            menu.AddMenuItem("------", null);
 
-            AddNumericItem(menu, "Hot Staging Lead", mjCore.Staging.HotStagingLeadTime,
+            menu.AddMJItem("Hot Staging Lead", mjCore.Staging.HotStagingLeadTime,
                 0.1, v => v.ToString("F1") + " s", null, true, 0, false, 0);
-            AddToggleItem(menu, "Drop Solids", mjCore.Staging, MechJebProxy.f_Staging_DropSolids);
-            AddNumericItem(menu, "Drop Solids Lead", mjCore.Staging.DropSolidsLeadTime,
+            menu.AddToggleItem("Drop Solids", mjCore.Staging, MechJebProxy.f_Staging_DropSolids);
+            menu.AddMJItem("Drop Solids Lead", mjCore.Staging.DropSolidsLeadTime,
                 0.1, v => v.ToString("F1") + " s", () => mjCore.Staging.DropSolids, true, 0, false, 0);
 
-            AddMenuItem(menu, "[BACK]", () => PopMenu());
+            menu.AddMenuItem("[BACK]", () => PopMenu());
             return menu;
         }
 
         private TextMenu BuildWarpHelperMenu()
         {
-            var menu = new TrackedTextMenu();
+            var menu = new TextMenu();
             menu.labelColor = JUtil.ColorToColorTag(Color.white);
             menu.selectedColor = JUtil.ColorToColorTag(Color.green);
 
-            AddMenuItem(menu, "Warp to Apoapsis", () => WarpToApoapsis());
-            AddMenuItem(menu, "Warp to Periapsis", () => WarpToPeriapsis());
-            AddMenuItem(menu, "Warp to Node", () => WarpToNode(),
+            menu.AddMenuItem("Warp to Apoapsis", () => WarpToApoapsis());
+            menu.AddMenuItem("Warp to Periapsis", () => WarpToPeriapsis());
+            menu.AddMenuItem("Warp to Node", () => WarpToNode(),
                 () => vessel != null && vessel.patchedConicSolver != null &&
                         vessel.patchedConicSolver.maneuverNodes.Count > 0);
-            AddMenuItem(menu, "[BACK]", () => PopMenu());
+            menu.AddMenuItem("[BACK]", () => PopMenu());
 
             return menu;
         }
@@ -1945,149 +1593,86 @@ namespace JSI
         #region Info Display Menu
         private TextMenu BuildInfoMenu()
         {
-            var menu = new TrackedTextMenu();
+            var menu = new TextMenu();
             menu.labelColor = JUtil.ColorToColorTag(Color.white);
             menu.selectedColor = JUtil.ColorToColorTag(Color.green);
 
-            AddMenuItem(menu, "Orbit Info", () => PushMenu(BuildOrbitInfoMenu()));
-            AddMenuItem(menu, "Surface Info", () => PushMenu(BuildSurfaceInfoMenu()));
-            AddMenuItem(menu, "Target Info", () => PushMenu(BuildTargetInfoMenu()),
+            menu.AddMenuItem("Orbit Info", () => PushMenu(BuildOrbitInfoMenu()));
+            menu.AddMenuItem("Surface Info", () => PushMenu(BuildSurfaceInfoMenu()));
+            menu.AddMenuItem("Target Info", () => PushMenu(BuildTargetInfoMenu()),
                 () => FlightGlobals.fetch.VesselTarget != null);
-            AddMenuItem(menu, "Vessel Info", () => PushMenu(BuildVesselInfoMenu()));
-            AddMenuItem(menu, "[BACK]", () => PopMenu());
+            menu.AddMenuItem("Vessel Info", () => PushMenu(BuildVesselInfoMenu()));
+            menu.AddMenuItem("[BACK]", () => PopMenu());
 
             return menu;
         }
 
         private TextMenu BuildOrbitInfoMenu()
         {
-            var menu = new TrackedTextMenu();
+            var menu = new TextMenu();
             menu.labelColor = JUtil.ColorToColorTag(Color.white);
             menu.selectedColor = JUtil.ColorToColorTag(Color.green);
 
             // These items will have their labels updated dynamically
-            var apItem = new TextMenu.Item("Apoapsis:", null);
-            var peItem = new TextMenu.Item("Periapsis:", null);
-            var eccItem = new TextMenu.Item("Eccentricity:", null);
-            var incItem = new TextMenu.Item("Inclination:", null);
-            var lanItem = new TextMenu.Item("LAN:", null);
-            var argPeItem = new TextMenu.Item("Arg. of PE:", null);
-            var periodItem = new TextMenu.Item("Period:", null);
-            var tApItem = new TextMenu.Item("Time to AP:", null);
-            var tPeItem = new TextMenu.Item("Time to PE:", null);
-            menu.Add(apItem);
-            menu.Add(peItem);
-            menu.Add(eccItem);
-            menu.Add(incItem);
-            menu.Add(lanItem);
-            menu.Add(argPeItem);
-            menu.Add(periodItem);
-            menu.Add(tApItem);
-            menu.Add(tPeItem);
-
-            GetTrackedItems(menu).Add(new TrackedMenuItem { item = apItem, id = "OrbitAp", isEnabled = null, getLabel = () => "Apoapsis: " + FormatDistance(vessel != null ? vessel.orbit.ApA : 0) });
-            GetTrackedItems(menu).Add(new TrackedMenuItem { item = peItem, id = "OrbitPe", isEnabled = null, getLabel = () => "Periapsis: " + FormatDistance(vessel != null ? vessel.orbit.PeA : 0) });
-            GetTrackedItems(menu).Add(new TrackedMenuItem { item = eccItem, id = "OrbitEcc", isEnabled = null, getLabel = () => "Eccentricity: " + (vessel != null ? vessel.orbit.eccentricity.ToString("F4") : "---") });
-            GetTrackedItems(menu).Add(new TrackedMenuItem { item = incItem, id = "OrbitInc", isEnabled = null, getLabel = () => "Inclination: " + FormatAngle(vessel != null ? vessel.orbit.inclination : 0) });
-            GetTrackedItems(menu).Add(new TrackedMenuItem { item = lanItem, id = "OrbitLAN", isEnabled = null, getLabel = () => "LAN: " + FormatAngle(vessel != null ? vessel.orbit.LAN : 0) });
-            GetTrackedItems(menu).Add(new TrackedMenuItem { item = argPeItem, id = "OrbitArgPe", isEnabled = null, getLabel = () => "Arg. of PE: " + FormatAngle(vessel != null ? vessel.orbit.argumentOfPeriapsis : 0) });
-            GetTrackedItems(menu).Add(new TrackedMenuItem { item = periodItem, id = "OrbitPeriod", isEnabled = null, getLabel = () => "Period: " + FormatTime(vessel != null ? vessel.orbit.period : 0) });
-            GetTrackedItems(menu).Add(new TrackedMenuItem { item = tApItem, id = "OrbitTAP", isEnabled = null, getLabel = () => "Time to AP: " + FormatTime(GetTimeToApoapsis()) });
-            GetTrackedItems(menu).Add(new TrackedMenuItem { item = tPeItem, id = "OrbitTPE", isEnabled = null, getLabel = () => "Time to PE: " + FormatTime(GetTimeToPeriapsis()) });
-            AddMenuItem(menu, "[BACK]", () => PopMenu());
+            menu.AddMenuItem(() => "Apoapsis: " + FormatDistance(vessel != null ? vessel.orbit.ApA : 0));
+            menu.AddMenuItem(() => "Periapsis: " + FormatDistance(vessel != null ? vessel.orbit.PeA : 0));
+            menu.AddMenuItem(() => "Eccentricity: " + (vessel != null ? vessel.orbit.eccentricity.ToString("F4") : "---"));
+            menu.AddMenuItem(() => "Inclination: " + FormatAngle(vessel != null ? vessel.orbit.inclination : 0));
+            menu.AddMenuItem(() => "LAN: " + FormatAngle(vessel != null ? vessel.orbit.LAN : 0));
+            menu.AddMenuItem(() => "Arg. of PE: " + FormatAngle(vessel != null ? vessel.orbit.argumentOfPeriapsis : 0));
+            menu.AddMenuItem(() => "Period: " + FormatTime(vessel != null ? vessel.orbit.period : 0));
+            menu.AddMenuItem(() => "Time to AP: " + FormatTime(GetTimeToApoapsis()));
+            menu.AddMenuItem(() => "Time to PE: " + FormatTime(GetTimeToPeriapsis()));
+            menu.AddMenuItem("[BACK]", () => PopMenu());
 
             return menu;
         }
 
         private TextMenu BuildSurfaceInfoMenu()
         {
-            var menu = new TrackedTextMenu();
+            var menu = new TextMenu();
             menu.labelColor = JUtil.ColorToColorTag(Color.white);
             menu.selectedColor = JUtil.ColorToColorTag(Color.green);
-
-            var altAslItem = new TextMenu.Item("Altitude (ASL):", null);
-            var altAglItem = new TextMenu.Item("Altitude (AGL):", null);
-            var latItem = new TextMenu.Item("Latitude:", null);
-            var lonItem = new TextMenu.Item("Longitude:", null);
-            var srfSpdItem = new TextMenu.Item("Surface Speed:", null);
-            var vertSpdItem = new TextMenu.Item("Vertical Speed:", null);
-            var horizSpdItem = new TextMenu.Item("Horizontal Speed:", null);
-            var headingItem = new TextMenu.Item("Heading:", null);
-            menu.Add(altAslItem);
-            menu.Add(altAglItem);
-            menu.Add(latItem);
-            menu.Add(lonItem);
-            menu.Add(srfSpdItem);
-            menu.Add(vertSpdItem);
-            menu.Add(horizSpdItem);
-            menu.Add(headingItem);
-
-            GetTrackedItems(menu).Add(new TrackedMenuItem { item = altAslItem, id = "SurfAltASL", isEnabled = null, getLabel = () => "Altitude (ASL): " + FormatDistance(vessel != null ? vessel.altitude : 0) });
-            GetTrackedItems(menu).Add(new TrackedMenuItem { item = altAglItem, id = "SurfAltAGL", isEnabled = null, getLabel = () => "Altitude (AGL): " + FormatDistance(vessel != null ? vessel.radarAltitude : 0) });
-            GetTrackedItems(menu).Add(new TrackedMenuItem { item = latItem, id = "SurfLat", isEnabled = null, getLabel = () => "Latitude: " + FormatAngle(vessel != null ? vessel.latitude : 0) });
-            GetTrackedItems(menu).Add(new TrackedMenuItem { item = lonItem, id = "SurfLon", isEnabled = null, getLabel = () => "Longitude: " + FormatAngle(vessel != null ? vessel.longitude : 0) });
-            GetTrackedItems(menu).Add(new TrackedMenuItem { item = srfSpdItem, id = "SurfSpd", isEnabled = null, getLabel = () => "Surface Speed: " + FormatSpeed(vessel != null ? vessel.srfSpeed : 0) });
-            GetTrackedItems(menu).Add(new TrackedMenuItem { item = vertSpdItem, id = "VertSpd", isEnabled = null, getLabel = () => "Vertical Speed: " + FormatSpeed(vessel != null ? vessel.verticalSpeed : 0) });
-            GetTrackedItems(menu).Add(new TrackedMenuItem { item = horizSpdItem, id = "HorizSpd", isEnabled = null, getLabel = () => "Horizontal Speed: " + FormatSpeed(vessel != null ? vessel.horizontalSrfSpeed : 0) });
-            GetTrackedItems(menu).Add(new TrackedMenuItem { item = headingItem, id = "Heading", isEnabled = null, getLabel = () => "Heading: " + FormatAngle(GetSurfaceHeading()) });
-            AddMenuItem(menu, "[BACK]", () => PopMenu());
+            menu.AddMenuItem(() => "Altitude (ASL): " + FormatDistance(vessel != null ? vessel.altitude : 0));
+            menu.AddMenuItem(() => "Altitude (AGL): " + FormatDistance(vessel != null ? vessel.radarAltitude : 0));
+            menu.AddMenuItem(() => "Latitude: " + FormatAngle(vessel != null ? vessel.latitude : 0));
+            menu.AddMenuItem(() => "Longitude: " + FormatAngle(vessel != null ? vessel.longitude : 0));
+            menu.AddMenuItem(() => "Surface Speed: " + FormatSpeed(vessel != null ? vessel.srfSpeed : 0));
+            menu.AddMenuItem(() => "Vertical Speed: " + FormatSpeed(vessel != null ? vessel.verticalSpeed : 0));
+            menu.AddMenuItem(() => "Horizontal Speed: " + FormatSpeed(vessel != null ? vessel.horizontalSrfSpeed : 0));
+            menu.AddMenuItem(() => "Heading: " + FormatAngle(GetSurfaceHeading()));
+            menu.AddMenuItem("[BACK]", () => PopMenu());
 
             return menu;
         }
 
         private TextMenu BuildTargetInfoMenu()
         {
-            var menu = new TrackedTextMenu();
+            var menu = new TextMenu();
             menu.labelColor = JUtil.ColorToColorTag(Color.white);
             menu.selectedColor = JUtil.ColorToColorTag(Color.green);
-
-            var distItem = new TextMenu.Item("Distance:", null);
-            var relVelItem = new TextMenu.Item("Relative Velocity:", null);
-            var caItem = new TextMenu.Item("Closest Approach:", null);
-            var tcaItem = new TextMenu.Item("Time to Closest:", null);
-            var relIncItem = new TextMenu.Item("Rel Inclination:", null);
-            menu.Add(distItem);
-            menu.Add(relVelItem);
-            menu.Add(caItem);
-            menu.Add(tcaItem);
-            menu.Add(relIncItem);
-
-            GetTrackedItems(menu).Add(new TrackedMenuItem { item = distItem, id = "TgtDist", isEnabled = null, getLabel = () => "Distance: " + GetTargetDistanceText() });
-            GetTrackedItems(menu).Add(new TrackedMenuItem { item = relVelItem, id = "TgtRelVel", isEnabled = null, getLabel = () => "Relative Velocity: " + GetTargetRelVelText() });
-            GetTrackedItems(menu).Add(new TrackedMenuItem { item = caItem, id = "TgtCA", isEnabled = null, getLabel = () => "Closest Approach: " + GetTargetClosestApproachText() });
-            GetTrackedItems(menu).Add(new TrackedMenuItem { item = tcaItem, id = "TgtTCA", isEnabled = null, getLabel = () => "Time to Closest: " + GetTargetTimeToClosestText() });
-            GetTrackedItems(menu).Add(new TrackedMenuItem { item = relIncItem, id = "TgtRelInc", isEnabled = null, getLabel = () => "Rel Inclination: " + GetTargetRelInclinationText() });
-            AddMenuItem(menu, "[BACK]", () => PopMenu());
+            menu.AddMenuItem(() => "Distance: " + GetTargetDistanceText());
+            menu.AddMenuItem(() => "Relative Velocity: " + GetTargetRelVelText());
+            menu.AddMenuItem(() => "Closest Approach: " + GetTargetClosestApproachText());
+            menu.AddMenuItem(() => "Time to Closest: " + GetTargetTimeToClosestText());
+            menu.AddMenuItem(() => "Rel Inclination: " + GetTargetRelInclinationText());
+            menu.AddMenuItem("[BACK]", () => PopMenu());
 
             return menu;
         }
 
         private TextMenu BuildVesselInfoMenu()
         {
-            var menu = new TrackedTextMenu();
+            var menu = new TextMenu();
             menu.labelColor = JUtil.ColorToColorTag(Color.white);
             menu.selectedColor = JUtil.ColorToColorTag(Color.green);
-
-            var massItem = new TextMenu.Item("Mass:", null);
-            var twrItem = new TextMenu.Item("TWR:", null);
-            var maxThrustItem = new TextMenu.Item("Max Thrust:", null);
-            var curThrustItem = new TextMenu.Item("Current Thrust:", null);
-            var dvVacItem = new TextMenu.Item("Total dV (Vac):", null);
-            var dvAtmItem = new TextMenu.Item("Total dV (Atm):", null);
-            menu.Add(massItem);
-            menu.Add(twrItem);
-            menu.Add(maxThrustItem);
-            menu.Add(curThrustItem);
-            menu.Add(dvVacItem);
-            menu.Add(dvAtmItem);
-
-            GetTrackedItems(menu).Add(new TrackedMenuItem { item = massItem, id = "VesselMass", isEnabled = null, getLabel = () => "Mass: " + GetVesselMassText() });
-            GetTrackedItems(menu).Add(new TrackedMenuItem { item = twrItem, id = "VesselTWR", isEnabled = null, getLabel = () => "TWR: " + GetVesselTwrText() });
-            GetTrackedItems(menu).Add(new TrackedMenuItem { item = maxThrustItem, id = "VesselMaxThrust", isEnabled = null, getLabel = () => "Max Thrust: " + GetVesselMaxThrustText() });
-            GetTrackedItems(menu).Add(new TrackedMenuItem { item = curThrustItem, id = "VesselCurThrust", isEnabled = null, getLabel = () => "Current Thrust: " + GetVesselCurrentThrustText() });
-            GetTrackedItems(menu).Add(new TrackedMenuItem { item = dvVacItem, id = "VesselDVVac", isEnabled = null, getLabel = () => "Total dV (Vac): " + FormatDeltaV(MechJebProxy.GetTotalVacuumDeltaV(mjCore)) });
-            GetTrackedItems(menu).Add(new TrackedMenuItem { item = dvAtmItem, id = "VesselDVAtm", isEnabled = null, getLabel = () => "Total dV (Atm): " + FormatDeltaV(MechJebProxy.GetTotalAtmoDeltaV(mjCore)) });
-            AddMenuItem(menu, "[BACK]", () => PopMenu());
+            menu.AddMenuItem(() => "Mass: " + GetVesselMassText());
+            menu.AddMenuItem(() => "TWR: " + GetVesselTwrText());
+            menu.AddMenuItem(() => "Max Thrust: " + GetVesselMaxThrustText());
+            menu.AddMenuItem(() => "Current Thrust: " + GetVesselCurrentThrustText());
+            menu.AddMenuItem(() => "Total dV (Vac): " + FormatDeltaV(MechJebProxy.GetTotalVacuumDeltaV(mjCore)));
+            menu.AddMenuItem(() => "Total dV (Atm): " + FormatDeltaV(MechJebProxy.GetTotalAtmoDeltaV(mjCore)));
+            menu.AddMenuItem("[BACK]", () => PopMenu());
 
             return menu;
         }
@@ -2096,32 +1681,32 @@ namespace JSI
         #region Settings Menu
         private TextMenu BuildSettingsMenu()
         {
-            var menu = new TrackedTextMenu();
+            var menu = new TextMenu();
             menu.labelColor = JUtil.ColorToColorTag(Color.white);
             menu.selectedColor = JUtil.ColorToColorTag(Color.green);
 
-            AddMenuItem(menu, "-- THRUST LIMITS --", null);
-            AddToggleItem(menu, "Prevent Overheats", mjCore.Thrust, MechJebProxy.f_Thrust_LimitToPreventOverheats);
-            AddToggleItem(menu, "Limit by Max Q", mjCore.Thrust, MechJebProxy.f_Thrust_LimitDynamicPressure);
-            AddToggleItem(menu, "Limit to Terminal Velocity", mjCore.Thrust, MechJebProxy.f_Thrust_LimitToTerminalVelocity);
-            AddToggleItem(menu, "Limit Acceleration", mjCore.Thrust, MechJebProxy.f_Thrust_LimitAcceleration);
-            AddToggleItem(menu, "Limit Throttle", mjCore.Thrust, MechJebProxy.f_Thrust_LimitThrottle);
+            menu.AddMenuItem("-- THRUST LIMITS --", null);
+            menu.AddToggleItem("Prevent Overheats", mjCore.Thrust, MechJebProxy.f_Thrust_LimitToPreventOverheats);
+            menu.AddToggleItem("Limit by Max Q", mjCore.Thrust, MechJebProxy.f_Thrust_LimitDynamicPressure);
+            menu.AddToggleItem("Limit to Terminal Velocity", mjCore.Thrust, MechJebProxy.f_Thrust_LimitToTerminalVelocity);
+            menu.AddToggleItem("Limit Acceleration", mjCore.Thrust, MechJebProxy.f_Thrust_LimitAcceleration);
+            menu.AddToggleItem("Limit Throttle", mjCore.Thrust, MechJebProxy.f_Thrust_LimitThrottle);
 
-            AddMenuItem(menu, "------", null);
+            menu.AddMenuItem("------", null);
 
-            AddToggleItem(menu, "Prevent Flameout", mjCore.Thrust, MechJebProxy.f_Thrust_LimitToPreventFlameout);
-            AddNumericItem(menu, "Flameout Safety", mjCore.Thrust.FlameoutSafetyPct,
+            menu.AddToggleItem("Prevent Flameout", mjCore.Thrust, MechJebProxy.f_Thrust_LimitToPreventFlameout);
+            menu.AddMJItem("Flameout Safety", mjCore.Thrust.FlameoutSafetyPct,
                 1.0, v => v.ToString("F0") + "%", null, true, 0, true, 100);
-            AddToggleItem(menu, "Smooth Throttle", mjCore.Thrust, MechJebProxy.f_Thrust_SmoothThrottle);
-            AddToggleItem(menu, "Manage Intakes", mjCore.Thrust, MechJebProxy.f_Thrust_ManageIntakes);
-            AddToggleItem(menu, "Differential Throttle", mjCore.Thrust, MechJebProxy.f_Thrust_DifferentialThrottle);
+            menu.AddToggleItem("Smooth Throttle", mjCore.Thrust, MechJebProxy.f_Thrust_SmoothThrottle);
+            menu.AddToggleItem("Manage Intakes", mjCore.Thrust, MechJebProxy.f_Thrust_ManageIntakes);
+            menu.AddToggleItem("Differential Throttle", mjCore.Thrust, MechJebProxy.f_Thrust_DifferentialThrottle);
 
-            AddMenuItem(menu, "------", null);
+            menu.AddMenuItem("------", null);
 
-            AddMenuItem(menu, "-- NODE EXECUTION --", null);
-            AddToggleItem(menu, "Auto-Warp", mjCore.Node, MechJebProxy.f_Node_Autowarp);
+            menu.AddMenuItem("-- NODE EXECUTION --", null);
+            menu.AddToggleItem("Auto-Warp", mjCore.Node, MechJebProxy.f_Node_Autowarp);
 
-            AddMenuItem(menu, "[BACK]", () => PopMenu());
+            menu.AddMenuItem("[BACK]", () => PopMenu());
 
             return menu;
         }
@@ -2184,13 +1769,13 @@ namespace JSI
                 mjStageStats = null;
                 mjAirplaneGuidance = null;
 
-				activeVessel = vessel;
+                activeVessel = vessel;
                 mjCore = vessel.GetMasterMechJeb();
                 if (mjCore != null)
                 {
                     mjSmartASS = mjCore.GetComputerModule<MechJebModuleSmartASS>();
                     mjDockingAutoPilot = mjCore.GetComputerModule<MechJebModuleDockingAutopilot>();
-					mjRendezvousAutopilot = mjCore.GetComputerModule<MechJebModuleRendezvousAutopilot>();
+                    mjRendezvousAutopilot = mjCore.GetComputerModule<MechJebModuleRendezvousAutopilot>();
                     mjTranslatron = mjCore.GetComputerModule<MechJebModuleTranslatron>();
                     mjSpacePlaneAutopilot = mjCore.GetComputerModule<MechJebModuleSpaceplaneAutopilot>();
                     mjLandingPredictions = mjCore.GetComputerModule<MechJebModuleLandingPredictions>();
@@ -2198,7 +1783,7 @@ namespace JSI
                     mjWarpController = mjCore.GetComputerModule<MechJebModuleWarpController>();
                     mjStageStats = mjCore.GetComputerModule<MechJebModuleStageStats>();
                     mjAirplaneGuidance = mjCore.GetComputerModule<MechJebModuleAirplaneGuidance>();
-				}
+                }
             }
 
             if (mjCore == null)
@@ -2223,39 +1808,9 @@ namespace JSI
         {
             if (mjCore == null || currentMenu == null) return;
 
-            var items = GetTrackedItems(currentMenu);
-            if (items == null) return;
-
-            foreach (var tracked in items)
+            if (currentMenu is TextMenu menu)
             {
-                try
-                {
-                    // Update enabled state
-                    if (tracked.isEnabled != null)
-                    {
-                        tracked.item.isDisabled = !tracked.isEnabled();
-                    }
-
-                    // Update label
-                    if (tracked.getLabel != null)
-                    {
-                        string newLabel = tracked.getLabel();
-                        if (!string.IsNullOrEmpty(newLabel))
-                        {
-                            tracked.item.labelText = newLabel;
-                        }
-                    }
-
-                    // Update selected state (for toggles)
-                    if (tracked.isSelected != null)
-                    {
-                        tracked.item.isSelected = tracked.isSelected();
-                    }
-                }
-                catch (Exception)
-                {
-                    // Silently ignore - keep existing label
-                }
+                menu.UpdateTrackedItems();
             }
 
             UpdateSmartASSSelections();
@@ -2564,37 +2119,16 @@ namespace JSI
 
         private void IncrementCurrentValue(int direction)
         {
-            if (mjCore == null || currentMenu == null) return;
+			if (mjCore == null || currentMenu == null) return;
+            currentMenu.IncrementCurrentValue(direction);
+		}
 
-            TextMenu.Item currentItem = currentMenu.GetCurrentItem();
-            if (currentItem == null) return;
-
-            var currentItems = GetTrackedItems(currentMenu);
-            if (currentItems == null) return;
-
-            for (int i = 0; i < currentItems.Count; i++)
-            {
-                TrackedMenuItem tracked = currentItems[i];
-                if (tracked.item == currentItem && tracked.isValueItem && tracked.getNumber != null && tracked.setNumber != null)
-                {
-                    double current = tracked.getNumber();
-                    double next = current + (tracked.step * direction);
-
-                    if (tracked.hasMin && next < tracked.min) next = tracked.min;
-                    if (tracked.hasMax && next > tracked.max) next = tracked.max;
-
-                    tracked.setNumber(next);
-                    UpdateTrackedItems();
-                    break;
-                }
-            }
-        }
         #endregion
 
         #region Render
 
         StringBuilder stringBuilder = new StringBuilder();
-		public string ShowMenu(int screenWidth, int screenHeight)
+        public string ShowMenu(int screenWidth, int screenHeight)
         {
             if (!MechJebProxy.IsAvailable)
             {
@@ -2614,5 +2148,53 @@ namespace JSI
             return stringBuilder.ToString();
         }
         #endregion
+    }
+
+    internal static class TextMenuExtensions
+    {
+        public static void AddMJItem(this TextMenu menu, string label,
+            EditableDouble editableDouble,
+            double step, Func<double, string> format,
+            Func<bool> enabledCheck = null,
+            bool hasMin = false, double min = 0,
+            bool hasMax = false, double max = 0)
+        {
+            if (editableDouble == null)
+            {
+                Log.Error($"editableDouble is null trying to add numeric item {label}");
+                return;
+            }
+            menu.AddNumericItem(label, () => editableDouble.Val, val => editableDouble.Val = val, step, format, enabledCheck, hasMin, min, hasMax, max);
+        }
+
+        public static void AddMJItem(this TextMenu menu, string label,
+            EditableDoubleMult editableDoubleMult,
+            double step, Func<double, string> format,
+            Func<bool> enabledCheck = null,
+            bool hasMin = false, double min = 0,
+            bool hasMax = false, double max = 0)
+        {
+            if (editableDoubleMult == null)
+            {
+                Log.Error($"editableDoubleMult is null trying to add numeric item {label}");
+                return;
+            }
+            menu.AddNumericItem(label, () => editableDoubleMult.Val, val => editableDoubleMult.Val = val, step, format, enabledCheck, hasMin, min, hasMax, max);
+        }
+
+        public static void AddMJItem(this TextMenu menu, string label,
+            EditableInt editableInt,
+            double step, Func<double, string> format,
+            Func<bool> enabledCheck = null,
+            bool hasMin = false, double min = 0,
+            bool hasMax = false, double max = 0)
+        {
+            if (editableInt == null)
+            {
+                Log.Error($"editableInt is null trying to add numeric item {label}");
+                return;
+            }
+            menu.AddNumericItem(label, () => editableInt.Val, val => editableInt.Val = (int)val, step, format, enabledCheck, hasMin, min, hasMax, max);
+        }
     }
 }

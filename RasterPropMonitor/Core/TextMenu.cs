@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Reflection;
 using System.Text;
 using UnityEngine;
 
@@ -15,7 +16,184 @@ namespace JSI
         public string menuTitle = string.Empty;
         public int rightColumnWidth;
 
-		public string ShowMenu(int width, int height)
+        // Tracked items can dynamically change from external inputs, and have more functionality for responding to button presses
+        private readonly List<TrackedMenuItem> trackedItems = new List<TrackedMenuItem>();
+
+        // Adds a dynamic item that can change its enabled and selected states
+        public void AddMenuItem(string label, Action action,
+            Func<bool> enabledCheck = null,
+            Func<bool> selectedCheck = null)
+        {
+            Action<int, TextMenu.Item> menuAction = null;
+            if (action != null)
+            {
+                menuAction = (idx, menuItem) => action();
+            }
+
+            var newItem = new TextMenu.Item(label, menuAction);
+            Add(newItem);
+
+            if (enabledCheck != null)
+            {
+                trackedItems.Add(new TrackedMenuItem
+                {
+                    item = newItem,
+                    id = label,
+                    isEnabled = enabledCheck,
+                    isSelected = selectedCheck,
+                });
+            }
+        }
+
+        // Overload for dynamic labels that update on refresh
+        public void AddMenuItem(Func<string> labelFunc, Action action = null,
+            Func<bool> enabledCheck = null)
+        {
+            string initialLabel = labelFunc();
+            Action<int, TextMenu.Item> menuAction = null;
+            if (action != null)
+            {
+                menuAction = (idx, menuItem) => action();
+            }
+
+            var newItem = new TextMenu.Item(initialLabel, menuAction);
+            Add(newItem);
+
+            trackedItems.Add(new TrackedMenuItem
+            {
+                item = newItem,
+                id = "DynamicLabel_" + initialLabel,
+                isEnabled = enabledCheck,
+                getLabel = labelFunc
+            });
+        }
+
+        // Adds an item that can toggle a boolean value on or off
+        public void AddToggleItem(string label,
+            Func<bool> getValue, Action<bool> setValue,
+            Func<bool> enabledCheck = null)
+        {
+            Action<int, TextMenu.Item> toggleAction = (idx, menuItem) =>
+            {
+                bool current = getValue();
+                setValue(!current);
+                UpdateTrackedItems();
+            };
+
+            // Use color highlighting for toggles - green when enabled, normal when disabled
+            // No checkbox prefix needed since RPM interprets [text] as color tags
+            var newItem = new TextMenu.Item(label, toggleAction);
+            Add(newItem);
+
+            trackedItems.Add(new TrackedMenuItem
+            {
+                item = newItem,
+                id = label,
+                isEnabled = enabledCheck,
+                isSelected = getValue  // This makes the item green when checked
+            });
+        }
+
+        // Adds an item that toggles a boolean field within an object on or off
+        public void AddToggleItem(string label,
+            object obj, FieldInfo field,
+            Func<bool> enabledCheck = null)
+        {
+            AddToggleItem(label,
+                () => (bool)field.GetValue(obj),
+                val => field.SetValue(obj, val),
+                enabledCheck);
+        }
+
+        // Adds an item that can edit a numeric value, via IncrementCurrentValue - which you should call from button handlers
+        public void AddNumericItem(string label,
+            Func<double> getValue, Action<double> setValue,
+            double step, Func<double, string> format,
+            Func<bool> enabledCheck = null,
+            bool hasMin = false, double min = 0,
+            bool hasMax = false, double max = 0)
+        {
+            var newItem = new TextMenu.Item(label);
+            Add(newItem);
+
+            trackedItems.Add(new TrackedMenuItem
+            {
+                item = newItem,
+                id = label,
+                isEnabled = enabledCheck,
+                isValueItem = true,
+                getNumber = getValue,
+                setNumber = setValue,
+                step = step,
+                hasMin = hasMin,
+                min = min,
+                hasMax = hasMax,
+                max = max,
+                getLabel = () => label + ": " + format(getValue())
+            });
+        }
+
+        // Call this from a button handler to update the value of a tracked numeric item
+        public void IncrementCurrentValue(int direction)
+        {
+            TextMenu.Item currentItem = GetCurrentItem();
+            if (currentItem == null) return;
+
+            for (int i = 0; i < trackedItems.Count; i++)
+            {
+                TrackedMenuItem tracked = trackedItems[i];
+                if (tracked.item == currentItem && tracked.isValueItem && tracked.getNumber != null && tracked.setNumber != null)
+                {
+                    double current = tracked.getNumber();
+                    double next = current + (tracked.step * direction);
+
+                    if (tracked.hasMin && next < tracked.min) next = tracked.min;
+                    if (tracked.hasMax && next > tracked.max) next = tracked.max;
+
+                    tracked.setNumber(next);
+                    UpdateTrackedItems();
+                    break;
+                }
+            }
+        }
+
+        // Call this in Update to refresh all tracked items
+        public void UpdateTrackedItems()
+        {
+            foreach (var tracked in trackedItems)
+            {
+                try
+                {
+                    // Update enabled state
+                    if (tracked.isEnabled != null)
+                    {
+                        tracked.item.isDisabled = !tracked.isEnabled();
+                    }
+
+                    // Update label
+                    if (tracked.getLabel != null)
+                    {
+                        string newLabel = tracked.getLabel();
+                        if (!string.IsNullOrEmpty(newLabel))
+                        {
+                            tracked.item.labelText = newLabel;
+                        }
+                    }
+
+                    // Update selected state (for toggles)
+                    if (tracked.isSelected != null)
+                    {
+                        tracked.item.isSelected = tracked.isSelected();
+                    }
+                }
+                catch (Exception)
+                {
+                    // Silently ignore - keep existing label
+                }
+            }
+        }
+
+        public string ShowMenu(int width, int height)
 		{
 			var menuString = new StringBuilder();
 			ShowMenu(menuString, width, height);
@@ -183,6 +361,24 @@ namespace JSI
                 this.isSelected = false;
                 this.id = id;
             }
+        }
+
+        internal class TrackedMenuItem
+        {
+            public TextMenu.Item item;
+            public string id;
+            public Func<bool> isEnabled;
+            public Func<bool> isSelected;
+            public Func<string> getLabel;
+            public Func<string> getValue;
+            public bool isValueItem;
+            public Func<double> getNumber;
+            public Action<double> setNumber;
+            public double step;
+            public bool hasMin;
+            public double min;
+            public bool hasMax;
+            public double max;
         }
     }
 }
