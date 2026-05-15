@@ -238,3 +238,4 @@ GameData/JSI/JSIAdvTransparentPods/Plugins/JSIAdvTransparentPods.dll
 /GameData/JSI/RasterPropMonitor/RasterPropMonitor.version
 /packages/
 /Releases
+*.lscache
