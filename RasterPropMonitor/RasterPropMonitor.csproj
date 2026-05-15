@@ -1,5 +1,4 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-  <Import Project="RasterPropMonitor.version.props" />
   <PropertyGroup>
     <OutputType>Library</OutputType>
     <RootNamespace>JSI</RootNamespace>
@@ -20,8 +19,11 @@
     <Publicize Include="Assembly-CSharp" />
   </ItemGroup>
   <ItemGroup>
-    <PackageReference Include="Krafs.Publicizer" Version="1.0.3" />
     <PackageReference Include="KSPBuildTools" Version="1.1.1" />
     <PackageReference Include="KSPCommunityLib" Version="0.1.1" />
+    <PackageReference Include="Krafs.Publicizer" Version="2.3.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
   </ItemGroup>
 </Project>

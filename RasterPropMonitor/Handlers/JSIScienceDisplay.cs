@@ -5,7 +5,7 @@ using System.Linq;
 using System.Text;
 using UnityEngine;
 
-namespace JSI.Handlers
+namespace JSI
 {
     class ExperimentDetailsMenu : TextMenu
     {

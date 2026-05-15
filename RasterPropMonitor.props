@@ -1,0 +1,8 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="Current" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="RasterPropMonitor/RasterPropMonitor.version.props" />
+  <PropertyGroup>
+    <KSPBT_ModRoot>$(MSBuildProjectDirectory)/../GameData/JSI/RasterPropMonitor/</KSPBT_ModRoot>
+    <KSPBT_ModPluginFolder>Plugins</KSPBT_ModPluginFolder>
+  </PropertyGroup>
+</Project>
