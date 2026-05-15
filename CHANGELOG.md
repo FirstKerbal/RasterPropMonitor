@@ -7,6 +7,7 @@ Please always post your [KSP.log file](https://gist.github.com/JonnyOThan/04c207
 ## Unreleased
 
 - Fixed MechJeb button/switch integration
+- Added airplane autopilot support to MFDs (thanks @Madlykeanu)
 
 ## 1.1.0.0 - 2026-04-13
 
