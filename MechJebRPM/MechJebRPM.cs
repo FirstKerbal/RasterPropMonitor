@@ -275,9 +275,9 @@ namespace JSI
             SetSmartASSTarget(MechJebModuleSmartASS.Target.AUTO);
         }
 
-        private void SetSmartASSTarget(int target, TextMenu.Item item)
+        private void SetSmartASSTarget(int itemIndex, TextMenu.Item item)
         {
-            SetSmartASSTarget((MechJebModuleSmartASS.Target)target);
+            SetSmartASSTarget((MechJebModuleSmartASS.Target)item.id);
         }
 
         private void SetSmartASSTarget(MechJebModuleSmartASS.Target target)
